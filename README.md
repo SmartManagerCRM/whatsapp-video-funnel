@@ -8,7 +8,8 @@ No AI/LLM is involved - all behaviour is predefined business logic, driven by a 
 * **Backend**: Cloudflare Workers (Hono) · D1 · R2 · Queues · Workers Static Assets
 * **Frontend**: React + TypeScript + Vite + Tailwind, service worker (Workbox), per-tenant manifest/scope
 * **WhatsApp**: official Meta WhatsApp Cloud API with Coexistence (the client keeps using the WhatsApp Business app)
-* **Licensing**: one-time LIFETIME licenses, RS256-signed with a private key that only exists in the separate Windows *License Generator*
+* **Licensing**: LIFETIME (never expires) and LIMITED (expiry date, renewable / upgradable) licenses, RS256-signed with a private key that only exists in the separate Windows *License Generator*
+* **Languages & currency**: UI in English / Français / العربية (RTL), bot messages in the same languages, currency picker with all MENA currencies first plus every international currency
 * **Cost**: designed for the Cloudflare Free plan; no VPS, Supabase, Firebase, n8n, or AI API
 
 > **Read [docs/TESTING.md](docs/TESTING.md) first** for an honest account of what has and has not been verified.
@@ -43,9 +44,9 @@ Then create the owner and a tenant - see [docs/INSTALLATION.md](docs/INSTALLATIO
 ## Tests
 
 ```bash
-npm test                                                   # 92 Worker tests in workerd (real D1/R2/Queues bindings, mocked Meta)
+npm test                                                   # 110 Worker tests in workerd (real D1/R2/Queues bindings, mocked Meta)
 npm run typecheck                                          # Worker + PWA
-dotnet test apps/license-generator/tests/SmartManager.Licensing.Tests   # 9 tests for the license signer/key store/register
+dotnet test apps/license-generator/tests/SmartManager.Licensing.Tests   # 14 tests for the license signer/key store/register
 PW=$(node -p "require.resolve('playwright')") bash tests/e2e/setup-local.sh && PW=$PW LIC=worker/.dev-keys/demo-cafe.smlic node tests/e2e/browser.mjs
 ```
 
