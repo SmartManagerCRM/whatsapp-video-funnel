@@ -1,0 +1,29 @@
+name: License Generator (Windows)
+
+on:
+  push:
+    branches: [claude/great-volta-4cf5ut, main]
+    paths: ["apps/license-generator/**", ".github/workflows/license-generator.yml"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with: { dotnet-version: "8.0.x" }
+      - name: Test the licensing core
+        run: dotnet test apps/license-generator/tests/SmartManager.Licensing.Tests --configuration Release
+      - name: Publish self-contained single-file exe
+        run: dotnet publish apps/license-generator/src/SmartManager.LicenseGenerator -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -o publish
+      - name: Verify the artifact exists
+        shell: pwsh
+        run: |
+          Get-ChildItem publish | Select-Object Name, Length
+          if (-not (Test-Path publish/SmartManagerLicenseGenerator.exe)) { throw "exe missing" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SmartManagerLicenseGenerator-win-x64
+          path: publish/SmartManagerLicenseGenerator.exe
+          retention-days: 30
