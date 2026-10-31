@@ -19,7 +19,7 @@ export function OwnerApp({ me, onLogout }: { me: Me; onLogout: () => void }) {
   const setCurrency = (c: string) => { setCurrencyState(c); try { localStorage.setItem(OWNER_CUR_KEY, c); } catch { /* ignore */ } };
   return (
     <div className="min-h-full bg-slate-50">
-      <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 bg-ink px-4 py-2.5 text-white safe-top"><Brand light />
+      <header className="flex min-h-[4.5rem] flex-wrap items-center justify-between gap-x-4 gap-y-3 bg-ink px-4 text-white sm:px-6" style={{ paddingTop: "max(env(safe-area-inset-top, 0px), 1rem)", paddingBottom: "1rem" }}><Brand light />
         <div className="flex flex-wrap items-center gap-3 text-xs text-slate-300" data-testid="header-controls">
           <HeaderLang dark /><CurrencySelect variant="headerDark" value={currency} onChange={setCurrency} />
           <span className="hidden sm:inline">{t("Platform owner")} · {me.user.email}</span>

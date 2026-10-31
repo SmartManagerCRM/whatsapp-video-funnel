@@ -36,8 +36,8 @@ for (const lang of ["fr", "ar"]) {
     if (i === 3 || i === 10) await page.screenshot({ path: `/tmp/e2e/i18n-${lang}-p${i}.png` });
   }
   // Settings: currency dropdown
-  await page.locator("aside nav button").nth(10).click(); await page.waitForSelector("optgroup", { state: "attached" });
-  const sel = page.locator('select').filter({ has: page.locator("optgroup") }).first();
+  await page.locator("aside nav button").nth(10).click(); await page.waitForSelector("main optgroup", { state: "attached" });
+  const sel = page.locator('main select').filter({ has: page.locator("optgroup") }).first();
   const groups = await sel.locator("optgroup").evaluateAll((g) => g.map((x) => ({ label: x.label, codes: [...x.querySelectorAll("option")].map((o) => o.value) })));
   ok(`[${lang}] two currency groups, MENA first`, groups.length === 2, groups.map((g) => `${g.label}(${g.codes.length})`).join(" / "));
   ok(`[${lang}] ALL ${MENA.length} MENA currencies present in the first group`, MENA.every((c) => groups[0].codes.includes(c)), MENA.filter((c) => !groups[0].codes.includes(c)).join(","));

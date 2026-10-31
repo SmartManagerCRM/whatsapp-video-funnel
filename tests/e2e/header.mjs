@@ -18,6 +18,15 @@ async function headerOk(page, label, vp) {
   const inView = (r) => r && r.y >= 0 && r.y + r.height <= 220 && r.x >= 0 && r.x + r.width <= vp.width + 1;
   ok(`${label}: language + currency selectors visible in header`, lv && cv && inView(lb) && inView(cb), `lang@y${Math.round(lb?.y)} cur@y${Math.round(cb?.y)} box=${Math.round(b.width)}x${Math.round(b.height)}`);
   ok(`${label}: no horizontal overflow`, !(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1)));
+  // header is not cramped: roomy, and the space above the content equals the space below it
+  const hb = await page.locator("header").first().boundingBox();
+  const pad = await page.locator("header").first().evaluate((h) => { const c = getComputedStyle(h); return [parseFloat(c.paddingTop), parseFloat(c.paddingBottom)]; });
+  // measure the whole header content (on phones the controls wrap under the logo, so use the union of all children)
+  const span = await page.locator("header").first().evaluate((h) => { const r = [...h.children].map((c) => c.getBoundingClientRect()); return [Math.min(...r.map((x) => x.top)), Math.max(...r.map((x) => x.bottom))]; });
+  const above = span[0] - hb.y, below = hb.y + hb.height - span[1];
+  ok(`${label}: header padding top == bottom and >= 16px`, Math.abs(pad[0] - pad[1]) <= 1 && pad[0] >= 16, `padding ${pad.join("/")}`);
+  ok(`${label}: header height >= 64px`, hb.height >= 64, `${Math.round(hb.height)}px`);
+  ok(`${label}: space above content ~ space below (±6px)`, Math.abs(above - below) <= 6 && above >= 12, `above=${Math.round(above)} below=${Math.round(below)}`);
   return { lang, cur };
 }
 
@@ -49,6 +58,17 @@ async function headerOk(page, label, vp) {
   ok("[tenant desktop] header language switches to Arabic (rtl)", (await page.evaluate(() => document.documentElement.dir)) === "rtl");
   await headerOk(page, "[tenant desktop, Arabic]", vp);
   await page.screenshot({ path: "/tmp/e2e/header-tenant-ar.png" });
+  await lang.selectOption("en"); await page.waitForTimeout(400);
+  const side = await page.locator("aside").first().innerText();
+  ok("[tenant desktop] sidebar has no business name / email / sign out", !/admin@demo\.test/.test(side) && !/Demo Café Group/.test(side) && !/Sign out/i.test(side), side.replace(/\s+/g, " ").slice(-60));
+  const acct = page.locator('[data-testid="header-account"]');
+  const acctText = await acct.innerText();
+  ok("[tenant desktop] header end shows business name + email", /Demo Café Group/.test(acctText) && /admin@demo\.test/.test(acctText), acctText.replace(/\s+/g, " "));
+  const ab = await acct.boundingBox(), cb2 = await page.locator('[data-testid="header-controls"]').boundingBox();
+  ok("[tenant desktop] account block is the last item in the header (right edge)", ab.x + ab.width >= cb2.x + cb2.width - 2 && ab.x > (await page.locator('[data-testid="header-controls"] select').nth(1).boundingBox()).x, `acct.x=${Math.round(ab.x)}`);
+  await page.screenshot({ path: "/tmp/e2e/header-tenant-desktop2.png" });
+  await page.locator('[data-testid="header-account"] button[aria-label="Sign out"]').click();
+  ok("[tenant desktop] sign out from the header returns to the sign-in form", await page.waitForSelector("form input[type=password]", { timeout: 8000 }).then(() => true, () => false));
   await ctx.close();
 }
 // ---------------- tenant dashboard, phone
@@ -57,7 +77,11 @@ async function headerOk(page, label, vp) {
   await m.goto(`${base}/t/demo-cafe/`); await m.waitForSelector("form");
   await m.fill("input[type=email]", "admin@demo.test"); await m.fill("input[type=password]", "demo-password-123"); await m.click("form button[type=submit]");
   await headerOk(m, "[tenant phone]", devices["iPhone 13"].viewport);
+  ok("[tenant phone] account + sign-out reachable in header", await m.locator('[data-testid="header-account"] button[aria-label="Sign out"]').isVisible());
   await m.screenshot({ path: "/tmp/e2e/header-tenant-phone.png" });
+  await m.click('button[aria-label="Open menu"]'); await m.waitForSelector("aside.absolute");
+  const drawer = await m.locator("aside.absolute").innerText();
+  ok("[tenant phone] menu drawer has no email / sign out", !/admin@demo\.test/.test(drawer) && !/Sign out/i.test(drawer));
   await ctx.close();
 }
 // ---------------- owner portal

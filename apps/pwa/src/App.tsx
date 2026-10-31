@@ -110,32 +110,35 @@ function Shell({ me, onLogout }: { me: Me; onLogout: () => void }) {
       ))}
     </nav>
   );
-  const footer = (
-    <div className="space-y-2 border-t border-white/10 p-3 text-xs text-slate-300">
-      <div className="flex items-center gap-2 px-1">
-        <img src={`${BASE}/logo`} alt="" className="h-9 w-9 rounded-lg bg-white/10 object-contain" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
-        <div className="min-w-0 truncate"><div className="truncate font-medium text-white">{me.tenant?.name}</div>{me.user.email}</div></div>
-      {install && <button onClick={install} className="flex w-full items-center gap-2 rounded-lg px-2 py-2 hover:bg-white/5"><Download className="h-4 w-4" />{t("Install app")}</button>}
-      <button onClick={onLogout} className="flex w-full items-center gap-2 rounded-lg px-2 py-2 hover:bg-white/5"><LogOut className="h-4 w-4" />{t("Sign out")}</button>
-    </div>
-  );
   return (
     <div className="flex h-full">
-      <aside className="hidden w-64 shrink-0 flex-col bg-ink lg:flex"><div className="p-5"><Brand light /></div>{nav}{footer}</aside>
+      <aside className="hidden w-64 shrink-0 flex-col bg-ink lg:flex"><div className="p-5"><Brand light /></div>{nav}</aside>
       {drawer && (
         <div className="fixed inset-0 z-40 lg:hidden"><div className="absolute inset-0 bg-slate-900/50" onClick={() => setDrawer(false)} />
-          <aside className="rise absolute inset-y-0 start-0 flex w-72 flex-col bg-ink safe-top"><div className="flex items-center justify-between p-5"><Brand light /><button aria-label={t("Close menu")} onClick={() => setDrawer(false)} className="text-slate-300"><X /></button></div>{nav}{footer}</aside></div>
+          <aside className="rise absolute inset-y-0 start-0 flex w-72 flex-col bg-ink safe-top"><div className="flex items-center justify-between p-5"><Brand light /><button aria-label={t("Close menu")} onClick={() => setDrawer(false)} className="text-slate-300"><X /></button></div>{nav}</aside></div>
       )}
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-slate-200 bg-white px-4 py-2.5 safe-top">
+        <header className="flex min-h-[4.5rem] flex-wrap items-center justify-between gap-x-4 gap-y-3 border-b border-slate-200 bg-white px-4 sm:px-6"
+          style={{ paddingTop: "max(env(safe-area-inset-top, 0px), 1rem)", paddingBottom: "1rem" }}>
           <div className="flex items-center gap-3">
             <div className="lg:hidden"><Brand /></div>
             <button aria-label={t("Open menu")} onClick={() => setDrawer(true)} className="rounded-lg p-2 hover:bg-slate-100 lg:hidden"><Menu /></button>
-            <div className="hidden text-sm font-medium text-slate-700 lg:block">{me.tenant?.name}</div>
           </div>
-          <div className="flex items-center gap-2 sm:gap-3" data-testid="header-controls">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 sm:gap-x-4" data-testid="header-controls">
             <HeaderLang />
             {currency && <CurrencySelect variant="header" value={currency} onChange={changeCurrency} disabled={me.user.role === "viewer"} />}
+            <div className="flex items-center gap-2.5 border-slate-200 ps-3 sm:border-s sm:ps-4" data-testid="header-account">
+              <span title={`${me.tenant?.name ?? ""} · ${me.user.email}`} className="relative flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-brand-700 text-sm font-semibold text-white">
+                {(me.tenant?.name ?? me.user.email).slice(0, 1).toUpperCase()}
+                <img src={`${BASE}/logo`} alt="" className="absolute inset-0 h-full w-full bg-white object-contain" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+              </span>
+              <div className="hidden min-w-0 text-start leading-tight md:block">
+                <div className="max-w-[12rem] truncate text-sm font-medium text-slate-800">{me.tenant?.name}</div>
+                <div className="max-w-[12rem] truncate text-xs text-slate-500">{me.user.email}</div>
+              </div>
+              {install && <button onClick={install} aria-label={t("Install app")} title={t("Install app")} className="rounded-lg p-2 text-slate-600 hover:bg-slate-100"><Download className="h-5 w-5" /></button>}
+              <button onClick={onLogout} aria-label={t("Sign out")} title={t("Sign out")} className="rounded-lg p-2 text-slate-600 hover:bg-slate-100"><LogOut className="h-5 w-5" /></button>
+            </div>
           </div>
         </header>
         {!online && <div role="status" className="flex items-center justify-center gap-2 bg-amber-500 px-3 py-1.5 text-sm font-medium text-white"><WifiOff className="h-4 w-4" />{t("You're offline. The app is installed, but live data and WhatsApp automation need an internet connection.")}</div>}
