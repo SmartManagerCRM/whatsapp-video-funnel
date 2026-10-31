@@ -105,3 +105,17 @@ describe("auth boundary", () => {
     expect((await raw(`/t/${t.slug}/api/categories`)).status).toBe(401);
   });
 });
+
+describe("owner password change", () => {
+  it("requires the current password, enforces strength, and revokes other sessions", async () => {
+    const { ownerLogin } = await import("./owner.helpers");
+    const o = await ownerLogin("pw-owner@x.test");
+    expect((await o.fetch("POST", "/auth/password", { current: "wrong-password-1", next: "a-brand-new-password" })).status).toBe(403);
+    expect((await o.fetch("POST", "/auth/password", { current: "owner-password-123", next: "short" })).status).toBe(400);
+    expect((await o.fetch("POST", "/auth/password", { current: "owner-password-123", next: "a-brand-new-password" })).status).toBe(200);
+    const relog = await raw("/owner/api/auth/login", { method: "POST", body: JSON.stringify({ email: "pw-owner@x.test", password: "a-brand-new-password" }) });
+    expect(relog.status).toBe(200);
+    const old = await raw("/owner/api/auth/login", { method: "POST", body: JSON.stringify({ email: "pw-owner@x.test", password: "owner-password-123" }) });
+    expect(old.status).toBe(401);
+  });
+});

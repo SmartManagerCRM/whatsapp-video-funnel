@@ -107,4 +107,15 @@ ownerAuth.post("/logout", async (c) => {
   return c.json({ ok: true });
 });
 
+ownerAuth.post("/password", requireOwnerSession, async (c) => {
+  const s = c.get("session");
+  const { current, next } = await readJson(c);
+  const row = await c.env.DB.prepare("SELECT password_hash FROM platform_owners WHERE id = ?").bind(s.userId).first<{ password_hash: string }>();
+  if (!row || !(await verifyPassword(String(current ?? ""), row.password_hash))) throw new HttpError(403, "Current password is incorrect");
+  await c.env.DB.prepare("UPDATE platform_owners SET password_hash = ? WHERE id = ?").bind(await hashPassword(assertStrongPassword(next), hashIterations(c.env)), s.userId).run();
+  await c.env.DB.prepare("DELETE FROM sessions WHERE user_id = ? AND kind = 'owner' AND csrf_token != ?").bind(s.userId, s.csrf).run();
+  await audit(c.env, null, "owner", s.userId, "owner_password_changed");
+  return c.json({ ok: true });
+});
+
 ownerAuth.get("/me", requireOwnerSession, (c) => c.json({ csrf: c.get("session").csrf, user: { email: c.get("session").email } }));
