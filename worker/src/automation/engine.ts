@@ -1,4 +1,5 @@
 import type { Env, QueueMessage, TenantSettings } from "../env";
+import { bump } from "../auth/session";
 import { getLicenseStatus } from "../licensing";
 import { newId, normKeyword, nowIso, safeJson } from "../lib/util";
 import * as wa from "../whatsapp/client";
@@ -129,6 +130,7 @@ async function deliver(ctx: Ctx, conv: Conversation, customer: Customer, d: Deli
     // "Submitted" only once Meta has accepted the API request.
     await ctx.env.DB.prepare("UPDATE message_logs SET wa_message_id = ?, status = 'submitted', updated_at = ? WHERE id = ?").bind(waId, nowIso(), logId).run();
     await recordApiOk(ctx.env, ctx.tenantId);
+    await bump(ctx.env, ctx.tenantId, "wa_messages");
     return waId;
   } catch (e) {
     if (e instanceof WaError) {

@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { getCookie } from "hono/cookie";
 import { clearRateLimit, clientIp, createSession, destroySession, rateLimit, requireOwnerSession, requireTenantSession, sessionCookie, SESSION_COOKIE, audit, type AppEnv } from "./session";
-import { dummyVerify, hashPassword, verifyPassword } from "../lib/crypto";
+import { dummyVerify, hashIterations, hashPassword, verifyPassword } from "../lib/crypto";
 import { HttpError, nowIso, timingSafeEqual } from "../lib/util";
 import type { TenantRow } from "../env";
 
@@ -59,7 +59,7 @@ tenantAuth.post("/password", requireTenantSession, async (c) => {
   const { current, next } = await readJson(c);
   const row = await c.env.DB.prepare("SELECT password_hash FROM tenant_users WHERE id = ?").bind(s.userId).first<{ password_hash: string }>();
   if (!row || !(await verifyPassword(String(current ?? ""), row.password_hash))) throw new HttpError(403, "Current password is incorrect");
-  await c.env.DB.prepare("UPDATE tenant_users SET password_hash = ? WHERE id = ?").bind(await hashPassword(assertStrongPassword(next)), s.userId).run();
+  await c.env.DB.prepare("UPDATE tenant_users SET password_hash = ? WHERE id = ?").bind(await hashPassword(assertStrongPassword(next), hashIterations(c.env)), s.userId).run();
   await c.env.DB.prepare("DELETE FROM sessions WHERE user_id = ? AND kind = 'tenant' AND csrf_token != ?").bind(s.userId, s.csrf).run();
   await audit(c.env, s.tenantId, "tenant_user", s.userId, "password_changed");
   return c.json({ ok: true });
@@ -81,7 +81,7 @@ ownerAuth.post("/bootstrap", async (c) => {
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new HttpError(400, "Valid email required");
   const id = crypto.randomUUID();
   await c.env.DB.prepare("INSERT INTO platform_owners (id, email, password_hash, created_at) VALUES (?,?,?,?)")
-    .bind(id, email, await hashPassword(assertStrongPassword(body.password)), nowIso()).run();
+    .bind(id, email, await hashPassword(assertStrongPassword(body.password), hashIterations(c.env)), nowIso()).run();
   await audit(c.env, null, "owner", id, "owner_bootstrapped");
   return c.json({ ok: true });
 });

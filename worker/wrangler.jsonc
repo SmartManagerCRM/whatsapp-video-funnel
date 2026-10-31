@@ -49,7 +49,8 @@
     "PRODUCT_ID": "smartmanager-whatsapp-video-funnel",
     "DEFAULT_GRAPH_VERSION": "v23.0",
     "MAX_UPLOAD_MB": "100",
-    "COOKIE_SECURE": "true"
+    "COOKIE_SECURE": "true",
+    "PASSWORD_HASH_ITERATIONS": "100000"
   }
 
   // Secrets (set with `wrangler secret put`, never committed):

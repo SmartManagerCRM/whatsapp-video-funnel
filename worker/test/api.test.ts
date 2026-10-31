@@ -250,3 +250,36 @@ describe("platform owner & PWA", () => {
     expect((await raw(`/t/nope/`)).status).toBe(404);
   });
 });
+
+describe("logo & misc", () => {
+  it("accepts a small PNG logo under a tenant prefix, rejects SVG/oversized, serves it back only to its tenant", async () => {
+    const a = await createTenant(); const b = await createTenant();
+    const sa = await login(a.slug, a.email); const sb = await login(b.slug, b.email);
+    const png = (type = "image/png", n = 100) => { const f = new FormData(); f.set("file", new File([new Uint8Array(n)], "l", { type })); return f; };
+    expect((await api(sa, "PUT", "/settings/logo", png("image/svg+xml"))).status).toBe(422);
+    expect((await api(sa, "PUT", "/settings/logo", png("image/png", 600 * 1024))).status).toBe(422);
+    expect((await api(sa, "PUT", "/settings/logo", png())).status).toBe(200);
+    expect(await env.VIDEOS.head(`tenants/${a.slug}/branding/logo.png`)).toBeTruthy();
+    expect((await api(sa, "GET", "/logo")).status).toBe(200);
+    expect((await api(sb, "GET", "/logo")).status).toBe(404); // B has none; never A's
+    expect((await api(sa, "DELETE", "/settings/logo")).status).toBe(200);
+    expect(await env.VIDEOS.head(`tenants/${a.slug}/branding/logo.png`)).toBeNull();
+  });
+
+  it("counts WhatsApp sends for usage monitoring", async () => {
+    const t = await readyTenant();
+    await customerSays(t, "201900000001", { text: "hi" });
+    const row = await env.DB.prepare("SELECT count FROM usage_counters WHERE tenant_id = ? AND metric = 'wa_messages'").bind(t.id).first<any>();
+    expect(row.count).toBe(2);
+  });
+
+  it("password hash cost is configurable but bounded", async () => {
+    const { hashIterations, hashPassword, verifyPassword } = await import("../src/lib/crypto");
+    expect(hashIterations({ PASSWORD_HASH_ITERATIONS: "5" })).toBe(10_000);
+    expect(hashIterations({ PASSWORD_HASH_ITERATIONS: "999999999" })).toBe(100_000);
+    expect(hashIterations({})).toBe(100_000);
+    const h = await hashPassword("a-long-password", 20_000);
+    expect(h.startsWith("pbkdf2$20000$")).toBe(true);
+    expect(await verifyPassword("a-long-password", h)).toBe(true); expect(await verifyPassword("nope", h)).toBe(false);
+  });
+});

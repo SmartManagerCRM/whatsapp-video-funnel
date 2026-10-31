@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
-import { get, post, put } from "../api";
+import { BASE, del, get, post, put } from "../api";
 import { Button, Card, Field, Input, Loading, Notice, PageHeader, Select, Toggle, useAction, useLoad } from "../ui";
 
 export function SettingsPage() {
   const q = useLoad(() => get("/settings"));
   const [s, setS] = useState<any>(null);
   const [pw, setPw] = useState({ current: "", next: "" });
+  const [logoKey, setLogoKey] = useState(0);
   const { busy, run } = useAction();
   useEffect(() => { if (q.data) setS({ ...q.data, opt_out_keywords: q.data.opt_out_keywords.join(", "), opt_in_keywords: q.data.opt_in_keywords.join(", ") }); }, [q.data]);
   if (!s) return <Loading />;
@@ -47,6 +48,14 @@ export function SettingsPage() {
             <Field label="Approved re-open template name (optional)" hint="Only if you created and got a WhatsApp template approved. Used outside the 24-hour window; otherwise the sequence simply pauses."><Input value={s.reopen_template_name ?? ""} onChange={(e) => set("reopen_template_name", e.target.value)} /></Field>
             <Field label="Template language code"><Input value={s.reopen_template_language ?? ""} onChange={(e) => set("reopen_template_language", e.target.value)} placeholder="en" /></Field>
             <Notice tone="info">WhatsApp charges are billed by Meta directly to your Business account. Rates vary by country and category — see <a className="underline" href="https://developers.facebook.com/docs/whatsapp/pricing" target="_blank" rel="noreferrer">Meta's official pricing</a>.</Notice>
+          </div>
+        </Card>
+        <Card title="Logo" className="lg:col-span-2">
+          <div className="flex flex-wrap items-center gap-4">
+            <img key={logoKey} src={`${BASE}/logo?v=${logoKey}`} alt="" className="h-16 w-16 rounded-xl border border-slate-200 bg-slate-50 object-contain" onError={(e) => { (e.target as HTMLImageElement).style.visibility = "hidden"; }} onLoad={(e) => { (e.target as HTMLImageElement).style.visibility = "visible"; }} />
+            <label className="inline-flex min-h-10 cursor-pointer items-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-medium hover:bg-slate-50">Upload logo<input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; e.target.value = ""; if (!f) return; const fd = new FormData(); fd.set("file", f); if (await run(() => put("/settings/logo", fd), "Logo updated")) setLogoKey(Date.now()); }} /></label>
+            <Button variant="ghost" onClick={async () => { await run(() => del("/settings/logo"), "Logo removed"); setLogoKey(Date.now()); }}>Remove</Button>
+            <span className="text-xs text-slate-500">PNG, JPEG or WebP, up to 512 KB.</span>
           </div>
         </Card>
         <Card title="Change password" className="lg:col-span-2">

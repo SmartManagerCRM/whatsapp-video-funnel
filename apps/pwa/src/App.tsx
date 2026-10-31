@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { BarChart3, Download, FileVideo2, Film, KeyRound, LayoutDashboard, ListVideo, LogOut, Menu, MessageSquareText, MessagesSquare, Plug, Rocket, Settings as Cog, Tags, Users, WifiOff, X } from "lucide-react";
-import { ApiError, IS_OWNER, SLUG, get, post, setCsrf } from "./api";
+import { ApiError, BASE, IS_OWNER, SLUG, get, post, setCsrf } from "./api";
 import { Button, Field, Input, Loading, UiProvider, cx, useAction } from "./ui";
 import { Dashboard } from "./pages/Dashboard";
 import { Categories } from "./pages/Categories";
@@ -99,7 +99,9 @@ function Shell({ me, onLogout }: { me: Me; onLogout: () => void }) {
   );
   const footer = (
     <div className="space-y-2 border-t border-white/10 p-3 text-xs text-slate-300">
-      <div className="truncate px-1"><div className="font-medium text-white">{me.tenant?.name}</div>{me.user.email}</div>
+      <div className="flex items-center gap-2 px-1">
+        <img src={`${BASE}/logo`} alt="" className="h-9 w-9 rounded-lg bg-white/10 object-contain" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+        <div className="min-w-0 truncate"><div className="truncate font-medium text-white">{me.tenant?.name}</div>{me.user.email}</div></div>
       {install && <button onClick={install} className="flex w-full items-center gap-2 rounded-lg px-2 py-2 hover:bg-white/5"><Download className="h-4 w-4" />Install app</button>}
       <button onClick={onLogout} className="flex w-full items-center gap-2 rounded-lg px-2 py-2 hover:bg-white/5"><LogOut className="h-4 w-4" />Sign out</button>
     </div>

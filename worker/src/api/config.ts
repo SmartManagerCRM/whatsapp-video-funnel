@@ -178,3 +178,36 @@ configApi.put("/templates", async (c) => {
   }
   return c.json({ ok: true });
 });
+
+// ------------------------------------------------------------------ logo (R2, tenant-prefixed)
+const LOGO_TYPES: Record<string, string> = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp" }; // SVG deliberately excluded (script injection)
+configApi.put("/settings/logo", async (c) => {
+  const t = c.get("tenant");
+  const form = await c.req.formData().catch(() => null);
+  const file: unknown = form?.get("file");
+  if (!(file instanceof File)) throw new HttpError(400, "Choose an image file");
+  if (!LOGO_TYPES[file.type]) throw new HttpError(422, "Logo must be a PNG, JPEG or WebP image");
+  if (file.size > 512 * 1024) throw new HttpError(422, "Logo must be smaller than 512 KB");
+  const key = `tenants/${t.slug}/branding/logo.${LOGO_TYPES[file.type]}`;
+  const old = await c.env.DB.prepare("SELECT logo_key FROM tenant_settings WHERE tenant_id = ?").bind(t.id).first<{ logo_key: string | null }>();
+  await c.env.VIDEOS.put(key, await file.arrayBuffer(), { httpMetadata: { contentType: file.type } });
+  if (old?.logo_key && old.logo_key !== key) await c.env.VIDEOS.delete(old.logo_key);
+  await c.env.DB.prepare("UPDATE tenant_settings SET logo_key = ?, updated_at = ? WHERE tenant_id = ?").bind(key, nowIso(), t.id).run();
+  return c.json({ ok: true });
+});
+
+configApi.get("/logo", async (c) => {
+  const t = c.get("tenant");
+  const row = await c.env.DB.prepare("SELECT logo_key FROM tenant_settings WHERE tenant_id = ?").bind(t.id).first<{ logo_key: string | null }>();
+  const obj = row?.logo_key ? await c.env.VIDEOS.get(row.logo_key) : null;
+  if (!obj) throw new HttpError(404, "No logo");
+  return new Response(obj.body, { headers: { "Content-Type": obj.httpMetadata?.contentType ?? "image/png", "Cache-Control": "private, max-age=300" } });
+});
+
+configApi.delete("/settings/logo", async (c) => {
+  const t = c.get("tenant");
+  const row = await c.env.DB.prepare("SELECT logo_key FROM tenant_settings WHERE tenant_id = ?").bind(t.id).first<{ logo_key: string | null }>();
+  if (row?.logo_key) await c.env.VIDEOS.delete(row.logo_key);
+  await c.env.DB.prepare("UPDATE tenant_settings SET logo_key = NULL WHERE tenant_id = ?").bind(t.id).run();
+  return c.json({ ok: true });
+});

@@ -1,0 +1,110 @@
+<Window x:Class="SmartManager.LicenseGenerator.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="SmartManager License Generator" Width="1040" Height="720" MinWidth="860" MinHeight="600" WindowStartupLocation="CenterScreen" Background="#F4F7F9">
+  <DockPanel>
+    <Border DockPanel.Dock="Top" x:Name="ProfileBanner" Padding="16,8" Background="#0F766E">
+      <DockPanel>
+        <TextBlock x:Name="BannerText" Foreground="White" FontWeight="SemiBold" VerticalAlignment="Center"/>
+        <TextBlock x:Name="BannerKey" Foreground="#CCFBF1" HorizontalAlignment="Right" VerticalAlignment="Center" FontFamily="Consolas"/>
+      </DockPanel>
+    </Border>
+    <TabControl x:Name="Tabs" Margin="12" SelectionChanged="Tabs_SelectionChanged">
+
+      <TabItem Header="Dashboard">
+        <StackPanel Margin="20">
+          <TextBlock Text="SmartManager License Generator" FontSize="24" FontWeight="SemiBold"/>
+          <TextBlock Text="Platform-owner tool. Issues RSA-signed lifetime licenses (.smlic). Never deploy this application or its private key to Cloudflare." Foreground="#475569" TextWrapping="Wrap" Margin="0,4,0,20"/>
+          <UniformGrid Columns="3" Margin="0,0,0,12">
+            <Border Background="White" Padding="16" Margin="0,0,8,0" CornerRadius="8"><StackPanel><TextBlock Text="Licenses issued" Foreground="#64748B"/><TextBlock x:Name="StatIssued" FontSize="30" FontWeight="SemiBold"/></StackPanel></Border>
+            <Border Background="White" Padding="16" Margin="0,0,8,0" CornerRadius="8"><StackPanel><TextBlock Text="Transferred (local note)" Foreground="#64748B"/><TextBlock x:Name="StatTransferred" FontSize="30" FontWeight="SemiBold"/></StackPanel></Border>
+            <Border Background="White" Padding="16" CornerRadius="8"><StackPanel><TextBlock Text="Signing key" Foreground="#64748B"/><TextBlock x:Name="StatKey" FontSize="18" FontWeight="SemiBold" TextWrapping="Wrap"/></StackPanel></Border>
+          </UniformGrid>
+          <TextBlock x:Name="DashHint" Foreground="#B45309" TextWrapping="Wrap"/>
+        </StackPanel>
+      </TabItem>
+
+      <TabItem Header="Generate License">
+        <ScrollViewer><StackPanel Margin="20" MaxWidth="560" HorizontalAlignment="Left">
+          <TextBlock Text="Client name" Style="{StaticResource Label}"/><TextBox x:Name="GenClient"/>
+          <TextBlock Text="Tenant ID (from the Owner portal, e.g. tnt_ab12…)" Style="{StaticResource Label}"/><TextBox x:Name="GenTenantId"/>
+          <TextBlock Text="Tenant slug (the /t/&lt;slug&gt;/ in the client URL)" Style="{StaticResource Label}"/><TextBox x:Name="GenSlug"/>
+          <TextBlock Text="Product" Style="{StaticResource Label}"/><ComboBox x:Name="GenProduct" IsEnabled="False"><ComboBoxItem IsSelected="True" Content="SmartManager WhatsApp Video Funnel"/></ComboBox>
+          <TextBlock Text="License type" Style="{StaticResource Label}"/><ComboBox x:Name="GenType" IsEnabled="False"><ComboBoxItem IsSelected="True" Content="LIFETIME (no expiration)"/></ComboBox>
+          <TextBlock Text="Authorized features" Style="{StaticResource Label}"/>
+          <StackPanel Margin="0,4,0,10"><CheckBox x:Name="FeatFunnel" Content="video-funnel (video sequences &amp; automation)" IsChecked="True" IsEnabled="False"/><CheckBox x:Name="FeatCoexist" Content="coexistence (WhatsApp Business app + API on one number)" IsChecked="True" Margin="0,4,0,0"/></StackPanel>
+          <TextBlock Text="Authorized WhatsApp numbers" Style="{StaticResource Label}"/><TextBox x:Name="GenNumbers" Text="1" Width="80" HorizontalAlignment="Left"/>
+          <StackPanel Orientation="Horizontal" Margin="0,6,0,12"><Button Content="Generate &amp; sign license" Click="Generate_Click"/></StackPanel>
+          <TextBlock x:Name="GenResult" TextWrapping="Wrap" Foreground="#0F766E" FontWeight="SemiBold"/>
+          <TextBox x:Name="GenToken" IsReadOnly="True" TextWrapping="Wrap" Height="90" FontFamily="Consolas" FontSize="11" Visibility="Collapsed" VerticalScrollBarVisibility="Auto"/>
+          <StackPanel x:Name="GenActions" Orientation="Horizontal" Visibility="Collapsed"><Button Content="Save .smlic file…" Click="GenSave_Click"/><Button Content="Copy token" Style="{StaticResource Secondary}" Click="GenCopy_Click"/></StackPanel>
+        </StackPanel></ScrollViewer>
+      </TabItem>
+
+      <TabItem Header="Issued Licenses">
+        <DockPanel Margin="12">
+          <TextBlock DockPanel.Dock="Top" Text="Select a row, then use Details / Export / Transfer." Foreground="#64748B" Margin="0,0,0,8"/>
+          <DataGrid x:Name="Grid" AutoGenerateColumns="False" IsReadOnly="True" SelectionMode="Single" SelectionChanged="Grid_SelectionChanged" CanUserAddRows="False" HeadersVisibility="Column" GridLinesVisibility="Horizontal">
+            <DataGrid.Columns>
+              <DataGridTextColumn Header="License ID" Binding="{Binding LicenseId}" Width="170"/>
+              <DataGridTextColumn Header="Client" Binding="{Binding ClientName}" Width="*"/>
+              <DataGridTextColumn Header="Slug" Binding="{Binding TenantSlug}" Width="140"/>
+              <DataGridTextColumn Header="Type" Binding="{Binding Type}" Width="90"/>
+              <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="100"/>
+              <DataGridTextColumn Header="Issued (UTC)" Binding="{Binding IssuedAt, StringFormat=yyyy-MM-dd HH:mm}" Width="140"/>
+            </DataGrid.Columns>
+          </DataGrid>
+        </DockPanel>
+      </TabItem>
+
+      <TabItem Header="License Details">
+        <DockPanel Margin="20">
+          <TextBlock DockPanel.Dock="Top" x:Name="DetailStatus" FontWeight="SemiBold" Margin="0,0,0,8"/>
+          <TextBox x:Name="DetailText" IsReadOnly="True" FontFamily="Consolas" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" AcceptsReturn="True"/>
+        </DockPanel>
+      </TabItem>
+
+      <TabItem Header="Export License">
+        <StackPanel Margin="20" MaxWidth="560" HorizontalAlignment="Left">
+          <TextBlock x:Name="ExportInfo" Text="Select a license in 'Issued Licenses' first." TextWrapping="Wrap" Margin="0,0,0,12"/>
+          <StackPanel Orientation="Horizontal"><Button Content="Save .smlic file…" Click="ExportSave_Click"/><Button Content="Copy token" Style="{StaticResource Secondary}" Click="ExportCopy_Click"/></StackPanel>
+          <TextBlock Foreground="#64748B" TextWrapping="Wrap" Margin="0,12,0,0" Text="Send the .smlic file (or token) to the client through a channel you trust. It is tenant-bound, so it only activates for the tenant it was issued for."/>
+        </StackPanel>
+      </TabItem>
+
+      <TabItem Header="Transfer License">
+        <ScrollViewer><StackPanel Margin="20" MaxWidth="560" HorizontalAlignment="Left">
+          <TextBlock x:Name="XferInfo" Text="Select the license to transfer in 'Issued Licenses' first." TextWrapping="Wrap" Margin="0,0,0,12"/>
+          <TextBlock Text="New client name" Style="{StaticResource Label}"/><TextBox x:Name="XferClient"/>
+          <TextBlock Text="New tenant ID" Style="{StaticResource Label}"/><TextBox x:Name="XferTenantId"/>
+          <TextBlock Text="New tenant slug" Style="{StaticResource Label}"/><TextBox x:Name="XferSlug"/>
+          <Button Content="Issue transfer license" Click="Transfer_Click" HorizontalAlignment="Left"/>
+          <TextBlock Margin="0,12,0,0" Foreground="#B45309" TextWrapping="Wrap" Text="Before the new client activates it: open the Owner portal → Tenants → the OLD tenant → Licenses → 'Approve transfer' and enter the new tenant ID. The new license only activates after that approval, and the old license stops working."/>
+          <TextBlock x:Name="XferResult" Margin="0,12,0,0" Foreground="#0F766E" FontWeight="SemiBold" TextWrapping="Wrap"/>
+        </StackPanel></ScrollViewer>
+      </TabItem>
+
+      <TabItem Header="Key Management">
+        <ScrollViewer><StackPanel Margin="20" MaxWidth="640" HorizontalAlignment="Left">
+          <TextBlock x:Name="KeyInfo" TextWrapping="Wrap" Margin="0,0,0,12"/>
+          <StackPanel Orientation="Horizontal" Margin="0,0,0,16"><Button Content="Generate new key pair" Click="KeyGen_Click"/><Button Content="Copy public key (PEM)" Style="{StaticResource Secondary}" Click="KeyCopyPub_Click"/><Button Content="Save public key…" Style="{StaticResource Secondary}" Click="KeySavePub_Click"/></StackPanel>
+          <TextBlock Style="{StaticResource Label}" Text="Backup"/>
+          <TextBlock TextWrapping="Wrap" Foreground="#475569" Margin="0,2,0,8" Text="Export an encrypted backup (PBKDF2 + AES-256-GCM, passphrase of 12+ characters) and store it offline in at least two separate secure places, together with the passphrase kept separately. If the key is lost, every future license must be issued under a new key and clients' Workers must be updated; existing licenses signed by the lost key keep working only while the old public key stays in the Worker."/>
+          <StackPanel Orientation="Horizontal" Margin="0,0,0,16"><Button Content="Export encrypted backup…" Style="{StaticResource Secondary}" Click="KeyBackup_Click"/><Button Content="Import backup…" Style="{StaticResource Secondary}" Click="KeyRestore_Click"/></StackPanel>
+          <TextBlock Style="{StaticResource Label}" Text="Deploying the public key"/>
+          <TextBox IsReadOnly="True" FontFamily="Consolas" FontSize="11" Height="40" Text="cd worker &amp;&amp; npx wrangler secret put LICENSE_PUBLIC_KEY   # paste the PEM"/>
+        </StackPanel></ScrollViewer>
+      </TabItem>
+
+      <TabItem Header="Settings">
+        <StackPanel Margin="20" MaxWidth="560" HorizontalAlignment="Left">
+          <TextBlock Text="Key profile" Style="{StaticResource Label}"/>
+          <ComboBox x:Name="ProfileBox" SelectionChanged="Profile_Changed"><ComboBoxItem Content="development"/><ComboBoxItem Content="production"/></ComboBox>
+          <TextBlock TextWrapping="Wrap" Foreground="#475569" Text="Development and production keys and registers are stored separately. Development licenses only verify against a Worker configured with the development public key."/>
+          <TextBlock Text="Data folder" Style="{StaticResource Label}" Margin="0,16,0,0"/><TextBox x:Name="DataDir" IsReadOnly="True"/>
+          <Button Content="Open folder" Style="{StaticResource Secondary}" Click="OpenDir_Click" HorizontalAlignment="Left"/>
+        </StackPanel>
+      </TabItem>
+    </TabControl>
+  </DockPanel>
+</Window>

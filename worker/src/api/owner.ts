@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { audit, requireOwnerSession, type AppEnv } from "../auth/session";
 import { assertStrongPassword } from "../auth/routes";
-import { hashPassword } from "../lib/crypto";
+import { hashIterations, hashPassword } from "../lib/crypto";
 import { HttpError, SLUG_RE, newId, nowIso } from "../lib/util";
 import { approveTransfer, getLicenseStatus, resetRegisteredPhone, revokeLicense, setLicenseSuspended } from "../licensing";
 import { randomToken } from "../lib/crypto";
@@ -37,7 +37,7 @@ ownerApi.post("/tenants", async (c) => {
   await c.env.DB.batch([
     c.env.DB.prepare("INSERT INTO tenants (id, slug, business_name, status, created_at, updated_at) VALUES (?,?,?,'active',?,?)").bind(id, slug, name, now, now),
     c.env.DB.prepare("INSERT INTO tenant_settings (tenant_id, business_name, timezone, updated_at) VALUES (?,?,?,?)").bind(id, name, str(b.timezone, "Time zone", { optional: true }) ?? "UTC", now),
-    c.env.DB.prepare("INSERT INTO tenant_users (id, tenant_id, email, password_hash, role, created_at) VALUES (?,?,?,?, 'admin', ?)").bind(newId("usr"), id, email, await hashPassword(assertStrongPassword(b.admin_password)), now),
+    c.env.DB.prepare("INSERT INTO tenant_users (id, tenant_id, email, password_hash, role, created_at) VALUES (?,?,?,?, 'admin', ?)").bind(newId("usr"), id, email, await hashPassword(assertStrongPassword(b.admin_password), hashIterations(c.env)), now),
     c.env.DB.prepare("INSERT INTO whatsapp_accounts (tenant_id, verify_token, status, updated_at) VALUES (?,?, 'not_connected', ?)").bind(id, randomToken(16), now),
   ]);
   await audit(c.env, id, "owner", c.get("session").userId, "tenant_created", { slug });
@@ -81,7 +81,7 @@ ownerApi.post("/tenants/:id/status", async (c) => {
 ownerApi.post("/tenants/:id/reset-admin", async (c) => {
   const b = await json(c); const id = c.req.param("id");
   const email = String(b.email ?? "").trim().toLowerCase();
-  const hash = await hashPassword(assertStrongPassword(b.password));
+  const hash = await hashPassword(assertStrongPassword(b.password), hashIterations(c.env));
   const user = await c.env.DB.prepare("SELECT id FROM tenant_users WHERE tenant_id = ? AND email = ?").bind(id, email).first<{ id: string }>();
   if (user) {
     await c.env.DB.batch([

@@ -35,16 +35,26 @@ export async function decryptSecret(env: Env, blob: string, aad: string): Promis
 // ---------- Password hashing (PBKDF2-SHA256; Workers cap iterations at 100k) ----------
 const PBKDF2_ITERATIONS = 100_000;
 
+/**
+ * Cost factor for NEW password hashes. Existing hashes keep the iteration count they were created with.
+ * The Workers Free plan allows only ~10 ms CPU per request; if logins hit that limit (Cloudflare error 1102)
+ * lower PASSWORD_HASH_ITERATIONS (minimum 10 000) or move to Workers Paid. See docs/SECURITY.md.
+ */
+export function hashIterations(env: { PASSWORD_HASH_ITERATIONS?: string }): number {
+  const n = parseInt(env.PASSWORD_HASH_ITERATIONS ?? "", 10);
+  return Number.isFinite(n) ? Math.min(PBKDF2_ITERATIONS, Math.max(10_000, n)) : PBKDF2_ITERATIONS;
+}
+
 async function pbkdf2(password: string, salt: Uint8Array, iterations: number): Promise<Uint8Array> {
   const key = await crypto.subtle.importKey("raw", enc.encode(password), "PBKDF2", false, ["deriveBits"]);
   const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt, iterations }, key, 256);
   return new Uint8Array(bits);
 }
 
-export async function hashPassword(password: string): Promise<string> {
+export async function hashPassword(password: string, iterations = PBKDF2_ITERATIONS): Promise<string> {
   const salt = crypto.getRandomValues(new Uint8Array(16));
-  const hash = await pbkdf2(password, salt, PBKDF2_ITERATIONS);
-  return `pbkdf2$${PBKDF2_ITERATIONS}$${b64encode(salt)}$${b64encode(hash)}`;
+  const hash = await pbkdf2(password, salt, iterations);
+  return `pbkdf2$${iterations}$${b64encode(salt)}$${b64encode(hash)}`;
 }
 
 export async function verifyPassword(password: string, stored: string): Promise<boolean> {

@@ -8,6 +8,7 @@ export interface Env {
   DEFAULT_GRAPH_VERSION: string;
   MAX_UPLOAD_MB: string;
   COOKIE_SECURE: string;
+  PASSWORD_HASH_ITERATIONS?: string;
   // secrets
   ENCRYPTION_KEY: string;
   LICENSE_PUBLIC_KEY: string;
