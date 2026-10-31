@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.wrangler/
+.dev.vars
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.smlic
+!**/test-fixtures/*.smlic
+bin/
+obj/
+*.user
+.vs/
+coverage/

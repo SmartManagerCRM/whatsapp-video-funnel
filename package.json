@@ -1,0 +1,14 @@
+{
+  "name": "smartmanager-whatsapp-video-funnel",
+  "private": true,
+  "version": "1.0.0",
+  "workspaces": ["worker", "apps/pwa"],
+  "scripts": {
+    "build:pwa": "npm run build -w apps/pwa",
+    "test": "npm test -w worker",
+    "typecheck": "npm run typecheck -w worker && npm run typecheck -w apps/pwa",
+    "deploy": "bash scripts/deploy.sh",
+    "dev:worker": "npm run dev -w worker",
+    "dev:pwa": "npm run dev -w apps/pwa"
+  }
+}

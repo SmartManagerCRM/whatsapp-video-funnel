@@ -1,0 +1,59 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "smartmanager-video",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "observability": { "enabled": true },
+
+  // PWA (built by apps/pwa) served via Workers Static Assets. The Worker runs first so that
+  // /t/<slug>/... routes (tenant manifest, API, webhooks) are handled before static files.
+  "assets": {
+    "directory": "../apps/pwa/dist",
+    "binding": "ASSETS",
+    "run_worker_first": true
+  },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "smartmanager-video",
+      "database_id": "REPLACE_WITH_D1_DATABASE_ID",
+      "migrations_dir": "../database/migrations"
+    }
+  ],
+
+  "r2_buckets": [
+    { "binding": "VIDEOS", "bucket_name": "smartmanager-video-assets" }
+  ],
+
+  "queues": {
+    "producers": [{ "binding": "QUEUE", "queue": "smartmanager-video-jobs" }],
+    "consumers": [
+      {
+        "queue": "smartmanager-video-jobs",
+        "max_batch_size": 5,
+        "max_batch_timeout": 2,
+        "max_retries": 5,
+        "dead_letter_queue": "smartmanager-video-jobs-dlq"
+      },
+      { "queue": "smartmanager-video-jobs-dlq", "max_batch_size": 10, "max_retries": 0 }
+    ]
+  },
+
+  // Safety net: expires human-handover pauses, runs data retention, re-dispatches due jobs.
+  "triggers": { "crons": ["*/5 * * * *"] },
+
+  "vars": {
+    "PRODUCT_ID": "smartmanager-whatsapp-video-funnel",
+    "DEFAULT_GRAPH_VERSION": "v23.0",
+    "MAX_UPLOAD_MB": "100",
+    "COOKIE_SECURE": "true"
+  }
+
+  // Secrets (set with `wrangler secret put`, never committed):
+  //   ENCRYPTION_KEY          base64 32-byte AES-GCM key for tenant credentials
+  //   LICENSE_PUBLIC_KEY      PEM (SPKI) RSA public key used to verify .smlic tokens
+  //   OWNER_BOOTSTRAP_TOKEN   one-time token to create the first platform owner
+}
