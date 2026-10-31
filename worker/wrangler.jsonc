@@ -19,7 +19,7 @@
     {
       "binding": "DB",
       "database_name": "smartmanager-video",
-      "database_id": "REPLACE_WITH_D1_DATABASE_ID",
+      "database_id": "4c361ef2-9dc8-4d11-bf5d-8a088e416629",
       "migrations_dir": "../database/migrations"
     }
   ],
