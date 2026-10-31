@@ -162,7 +162,7 @@ export async function readiness(c: any) {
   ]);
   const ok = (s?: string) => ["connected", "coexistence_verified"].includes(s ?? "");
   const checks = [
-    { key: "license", label: "Lifetime license activated", ok: lic.valid, detail: lic.valid ? undefined : lic.message },
+    { key: "license", label: "License activated", ok: lic.valid, detail: lic.valid ? undefined : lic.message },
     { key: "whatsapp", label: "WhatsApp credentials verified", ok: ok(acct?.status), detail: acct?.status ?? "not_connected" },
     { key: "coexistence", label: "Coexistence verified (WhatsApp Business app + API on the same number)", ok: acct?.status === "coexistence_verified", detail: acct?.is_on_biz_app === 0 ? "Number is not on the WhatsApp Business app" : undefined },
     { key: "webhook", label: "Webhook receiving events from Meta", ok: !!acct?.last_webhook_at },
@@ -194,6 +194,6 @@ integrationApi.get("/dashboard-status", async (c) => {
   const lic = await getLicenseStatus(c.env, t.id);
   const acct = await c.env.DB.prepare("SELECT status, last_webhook_at FROM whatsapp_accounts WHERE tenant_id = ?").bind(t.id).first<any>();
   const s = await c.env.DB.prepare("SELECT automation_enabled FROM tenant_settings WHERE tenant_id = ?").bind(t.id).first<any>();
-  return c.json({ license: { valid: lic.valid, reason: lic.reason }, whatsapp: acct?.status ?? "not_connected", automation_enabled: !!s?.automation_enabled });
+  return c.json({ license: { valid: lic.valid, reason: lic.reason, type: lic.license?.type ?? null, expires_at: lic.license?.expires_at ?? null, days_left: lic.license?.days_left ?? null, expiring_soon: lic.license?.expiring_soon ?? false }, whatsapp: acct?.status ?? "not_connected", automation_enabled: !!s?.automation_enabled });
 });
 

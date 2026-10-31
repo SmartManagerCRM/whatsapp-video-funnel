@@ -147,3 +147,98 @@ describe("lifetime licensing", () => {
     expect((await o.fetch("POST", `/licenses/${lic.id}/reinstate`)).status).toBe(409); // revoked is final
   });
 });
+
+describe("limited-time licenses", () => {
+  const inDays = (d: number) => Math.floor((Date.now() + d * 86_400_000) / 1000);
+
+  it("activates a LIMITED license with a future expiry and reports days left", async () => {
+    const t = await createTenant();
+    await activateLicense(env, t, await signLicense(licensePayload(t, { type: "LIMITED", exp: inDays(90) })), "x");
+    const st = await getLicenseStatus(env, t.id);
+    expect(st.valid).toBe(true);
+    expect(st.license).toMatchObject({ type: "LIMITED", lifetime: false, expiring_soon: false });
+    expect(st.license!.days_left).toBeGreaterThanOrEqual(89);
+    const soon = await createTenant();
+    await activateLicense(env, soon, await signLicense(licensePayload(soon, { type: "LIMITED", exp: inDays(10) })), "x");
+    expect((await getLicenseStatus(env, soon.id)).license?.expiring_soon).toBe(true);
+  });
+
+  it("rejects LIMITED without an expiry and LIMITED already expired", async () => {
+    const t = await createTenant();
+    expect(await reason(activateLicense(env, t, await signLicense(licensePayload(t, { type: "LIMITED" })), "x"))).toBe("malformed");
+    expect(await reason(activateLicense(env, t, await signLicense(licensePayload(t, { type: "LIMITED", exp: inDays(-1) })), "x"))).toBe("expired");
+  });
+
+  it("stops validating after the expiry date and switches automation off", async () => {
+    const t = await createTenant();
+    await activateLicense(env, t, await signLicense(licensePayload(t, { type: "LIMITED", exp: inDays(5) })), "x");
+    expect((await getLicenseStatus(env, t.id)).valid).toBe(true);
+    await env.DB.prepare("UPDATE licenses SET expires_at = ? WHERE tenant_id = ?").bind(new Date(Date.now() - 1000).toISOString(), t.id).run();
+    const st = await getLicenseStatus(env, t.id);
+    expect(st.valid).toBe(false); expect(st.reason).toBe("expired");
+    // the grace mechanism never revives an expired license
+    const broken = { ...env, LICENSE_PUBLIC_KEY: "garbage" } as typeof env;
+    expect((await getLicenseStatus(broken, t.id)).valid).toBe(false);
+  });
+
+  it("an expired license pauses the bot and resumes after renewal when the customer writes again", async () => {
+    const { readyTenant, customerSays, installMeta, installQueue, meta, convOf } = await import("./helpers");
+    installMeta(); installQueue();
+    const t = await readyTenant();
+    const lic = await env.DB.prepare("SELECT id FROM licenses WHERE tenant_id = ?").bind(t.id).first<any>();
+    await env.DB.prepare("UPDATE licenses SET license_type = 'LIMITED', expires_at = ? WHERE id = ?").bind(new Date(Date.now() - 1000).toISOString(), lic.id).run();
+    await customerSays(t, "201333000001", { text: "hi" });
+    expect(meta.sent).toHaveLength(0);                      // expired: nothing is sent
+    // renewal: new token that renews the limited license
+    await activateLicense(env, t, await signLicense(licensePayload(t, { type: "LIMITED", exp: inDays(365), renews: lic.id })), "x");
+    await customerSays(t, "201333000001", { text: "hello again" });
+    expect(meta.types).toEqual(["text", "interactive:list"]); // bot works again
+    expect((await convOf(t.id, "201333000001")).state).toBe("WAITING_FOR_CATEGORY");
+  });
+
+  it("renewal extends a LIMITED license; the old one is superseded (not revocable by mistake)", async () => {
+    const t = await createTenant();
+    await activateLicense(env, t, await signLicense(licensePayload(t, { lid: "lic_ltd1", type: "LIMITED", exp: inDays(20) })), "x");
+    // without `renews`, a second license is refused
+    expect(await reason(activateLicense(env, t, await signLicense(licensePayload(t, { lid: "lic_ltd2", type: "LIMITED", exp: inDays(400) })), "x"))).toBe("already_used");
+    await activateLicense(env, t, await signLicense(licensePayload(t, { lid: "lic_ltd3", type: "LIMITED", exp: inDays(400), renews: "lic_ltd1" })), "x");
+    const st = await getLicenseStatus(env, t.id);
+    expect(st.license?.id).toBe("lic_ltd3"); expect(st.license!.days_left).toBeGreaterThan(390);
+    expect((await env.DB.prepare("SELECT status FROM licenses WHERE id = 'lic_ltd1'").first<any>()).status).toBe("transferred");
+    const ev = await env.DB.prepare("SELECT detail FROM license_events WHERE license_id = 'lic_ltd1' AND event = 'superseded_by'").first<any>();
+    expect(ev.detail).toBe("lic_ltd3");
+  });
+
+  it("a LIMITED license can be upgraded to LIFETIME, but LIFETIME cannot be 'renewed'", async () => {
+    const t = await createTenant();
+    await activateLicense(env, t, await signLicense(licensePayload(t, { lid: "lic_up1", type: "LIMITED", exp: inDays(30) })), "x");
+    await activateLicense(env, t, await signLicense(licensePayload(t, { lid: "lic_up2", type: "LIFETIME", renews: "lic_up1" })), "x");
+    const st = await getLicenseStatus(env, t.id);
+    expect(st.license).toMatchObject({ id: "lic_up2", type: "LIFETIME", lifetime: true, days_left: null });
+    expect(await reason(activateLicense(env, t, await signLicense(licensePayload(t, { lid: "lic_up3", type: "LIMITED", exp: inDays(30), renews: "lic_up2" })), "x"))).toBe("malformed");
+  });
+
+  it("renewal is refused for another tenant's license, unknown ids, revoked and suspended licenses", async () => {
+    const a = await createTenant(); const b = await createTenant();
+    await activateLicense(env, a, await signLicense(licensePayload(a, { lid: "lic_ra", type: "LIMITED", exp: inDays(30) })), "x");
+    expect(await reason(activateLicense(env, b, await signLicense(licensePayload(b, { lid: "lic_rb", type: "LIMITED", exp: inDays(30), renews: "lic_ra" })), "x"))).toBe("malformed");
+    expect(await reason(activateLicense(env, b, await signLicense(licensePayload(b, { lid: "lic_rc", type: "LIMITED", exp: inDays(30), renews: "lic_nope" })), "x"))).toBe("malformed");
+    await env.DB.prepare("UPDATE licenses SET status = 'suspended' WHERE id = 'lic_ra'").run();
+    expect(await reason(activateLicense(env, a, await signLicense(licensePayload(a, { lid: "lic_rd", type: "LIMITED", exp: inDays(60), renews: "lic_ra" })), "x"))).toBe("suspended");
+    await env.DB.prepare("UPDATE licenses SET status = 'revoked' WHERE id = 'lic_ra'").run();
+    expect(await reason(activateLicense(env, a, await signLicense(licensePayload(a, { lid: "lic_re", type: "LIMITED", exp: inDays(60), renews: "lic_ra" })), "x"))).toBe("revoked");
+  });
+
+  it("the tenant license endpoint shows expiry details; owner list includes them", async () => {
+    const t = await createTenant();
+    const s = await login(t.slug, t.email);
+    await api(s, "POST", "/license/activate", { license: await signLicense(licensePayload(t, { type: "LIMITED", exp: inDays(15) })) });
+    const v = (await (await api(s, "GET", "/license")).json()) as any;
+    expect(v.license).toMatchObject({ type: "LIMITED", lifetime: false, expiring_soon: true });
+    const ds = (await (await api(s, "GET", "/dashboard-status")).json()) as any;
+    expect(ds.license).toMatchObject({ valid: true, type: "LIMITED", expiring_soon: true });
+    const o = await ownerLogin();
+    const list = (await (await o.fetch("GET", "/licenses")).json()) as any;
+    expect(list.licenses.find((l: any) => l.tenant_id === t.id).expires_at).toBeTruthy();
+  });
+});

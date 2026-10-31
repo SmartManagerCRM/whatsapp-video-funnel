@@ -18,6 +18,7 @@ ownerApi.get("/tenants", async (c) => {
     `SELECT t.id, t.slug, t.business_name, t.status, t.created_at, t.last_activity_at,
             (SELECT status FROM licenses l WHERE l.tenant_id = t.id AND l.status != 'transferred' ORDER BY activated_at DESC LIMIT 1) AS license_status,
             (SELECT license_type FROM licenses l WHERE l.tenant_id = t.id AND l.status != 'transferred' ORDER BY activated_at DESC LIMIT 1) AS license_type,
+            (SELECT expires_at FROM licenses l WHERE l.tenant_id = t.id AND l.status != 'transferred' ORDER BY activated_at DESC LIMIT 1) AS license_expires_at,
             (SELECT status FROM whatsapp_accounts a WHERE a.tenant_id = t.id) AS whatsapp_status,
             (SELECT COUNT(*) FROM customers cu WHERE cu.tenant_id = t.id) AS customers
        FROM tenants t ORDER BY t.created_at DESC`,
@@ -52,7 +53,7 @@ ownerApi.get("/tenants/:id", async (c) => {
   const wa = await c.env.DB.prepare(
     "SELECT status, display_phone, waba_id, phone_number_id, is_on_biz_app, platform_type, last_api_ok_at, last_webhook_at, last_check_at, last_error, graph_version FROM whatsapp_accounts WHERE tenant_id = ?",
   ).bind(id).first();
-  const { results: licenses } = await c.env.DB.prepare("SELECT id, license_type, status, issued_at, activated_at, registered_phone, max_whatsapp_numbers FROM licenses WHERE tenant_id = ? ORDER BY activated_at DESC").bind(id).all();
+  const { results: licenses } = await c.env.DB.prepare("SELECT id, license_type, status, issued_at, expires_at, activated_at, registered_phone, max_whatsapp_numbers FROM licenses WHERE tenant_id = ? ORDER BY activated_at DESC").bind(id).all();
   const { results: users } = await c.env.DB.prepare("SELECT id, email, role, disabled FROM tenant_users WHERE tenant_id = ?").bind(id).all();
   const counts = await c.env.DB.prepare(
     `SELECT (SELECT COUNT(*) FROM customers WHERE tenant_id = ?1) AS customers, (SELECT COUNT(*) FROM videos WHERE tenant_id = ?1) AS videos,
@@ -99,7 +100,7 @@ ownerApi.post("/tenants/:id/reset-admin", async (c) => {
 // ------------------------------------------------------------------ licenses
 ownerApi.get("/licenses", async (c) => {
   const { results } = await c.env.DB.prepare(
-    "SELECT l.id, l.tenant_id, t.slug, l.client_name, l.license_type, l.status, l.issued_at, l.activated_at, l.registered_phone FROM licenses l JOIN tenants t ON t.id = l.tenant_id ORDER BY l.activated_at DESC",
+    "SELECT l.id, l.tenant_id, t.slug, l.client_name, l.license_type, l.status, l.issued_at, l.expires_at, l.activated_at, l.registered_phone FROM licenses l JOIN tenants t ON t.id = l.tenant_id ORDER BY l.activated_at DESC",
   ).all();
   return c.json({ licenses: results });
 });

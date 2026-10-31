@@ -1,11 +1,18 @@
 import { Hono } from "hono";
 import { audit, type AppEnv } from "../auth/session";
-import { DEFAULT_TEMPLATES } from "../automation/templates";
+import { DEFAULT_TEMPLATES, builtinTemplate } from "../automation/templates";
 import { HttpError, newId, nowIso, safeJson } from "../lib/util";
 import { int, json, oneOf, str, url, validTimezone } from "./validate";
 import type { TenantSettings } from "../env";
 
 export const configApi = new Hono<AppEnv>();
+
+/** ISO 4217 alphabetic code (three capital letters). The PWA offers the full list; the server only checks the shape. */
+function currencyCode(v: unknown): string {
+  const c = typeof v === "string" ? v.trim().toUpperCase() : "";
+  if (!/^[A-Z]{3}$/.test(c)) throw new HttpError(400, "Choose a valid currency");
+  return c;
+}
 
 // ------------------------------------------------------------------ settings
 configApi.get("/settings", async (c) => {
@@ -27,13 +34,14 @@ configApi.put("/settings", async (c) => {
   };
   await c.env.DB.prepare(
     `UPDATE tenant_settings SET business_name = ?, timezone = ?, default_language = ?, delivery_mode = ?, default_delay_seconds = ?,
-       website_url = ?, retention_days = ?, handover_enabled = ?, handover_timeout_minutes = ?, category_change_policy = ?,
+       website_url = ?, currency = ?, retention_days = ?, handover_enabled = ?, handover_timeout_minutes = ?, category_change_policy = ?,
        opt_out_keywords = ?, opt_in_keywords = ?, reopen_template_name = ?, reopen_template_language = ?, notification_email = ?, updated_at = ?
      WHERE tenant_id = ?`,
   ).bind(
     str(b.business_name, "Business name", { max: 120 }), tz, str(b.default_language, "Language", { max: 10 }) ?? "en",
     oneOf(b.delivery_mode, "Delivery mode", ["automatic", "manual", "hybrid"] as const),
     int(b.default_delay_seconds, "Default delay", 0, 86_400 * 7), url(b.website_url, "Website URL"),
+    currencyCode(b.currency),
     int(b.retention_days, "Retention days", 0, 3650), b.handover_enabled ? 1 : 0, int(b.handover_timeout_minutes, "Handover timeout", 0, 10_080),
     oneOf(b.category_change_policy, "Category change policy", ["restart", "continue"] as const),
     kw(b.opt_out_keywords, "Opt-out keywords"), kw(b.opt_in_keywords, "Opt-in keywords"),
@@ -157,8 +165,8 @@ configApi.get("/templates", async (c) => {
   const custom = new Map(results.filter((r) => r.language === lang).map((r) => [r.key, r.body]));
   return c.json({
     language: lang,
-    languages: [...new Set(["en", lang, ...results.map((r) => r.language)])],
-    templates: Object.entries(DEFAULT_TEMPLATES).map(([key, d]) => ({ key, label: d.label, default: d.body, body: custom.get(key) ?? null })),
+    languages: [...new Set(["en", "fr", "ar", lang, ...results.map((r) => r.language)])],
+    templates: Object.entries(DEFAULT_TEMPLATES).map(([key, d]) => ({ key, label: d.label, default: builtinTemplate(key, lang), body: custom.get(key) ?? null })),
   });
 });
 

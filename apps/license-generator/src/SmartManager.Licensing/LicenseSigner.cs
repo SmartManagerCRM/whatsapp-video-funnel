@@ -58,10 +58,23 @@ public static class LicenseSigner
         if (string.IsNullOrWhiteSpace(p.TenantId)) throw new ArgumentException("Tenant ID is required");
         if (!System.Text.RegularExpressions.Regex.IsMatch(p.TenantSlug, "^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$"))
             throw new ArgumentException("Tenant slug must be 3-40 characters: lowercase letters, digits and hyphens");
-        if (p.Type != LicensePayload.Lifetime) throw new ArgumentException("Only LIFETIME licenses are supported");
-        if (p.Expires is not null) throw new ArgumentException("A LIFETIME license must not have an expiration date");
+        if (p.Type == LicensePayload.Lifetime)
+        {
+            if (p.Expires is not null) throw new ArgumentException("A LIFETIME license must not have an expiration date");
+        }
+        else if (p.Type == LicensePayload.Limited)
+        {
+            if (p.Expires is null) throw new ArgumentException("A LIMITED license needs an expiration date");
+            if (p.Expires <= p.IssuedAt) throw new ArgumentException("The expiration date must be after the issue date");
+            if (p.Expires > p.IssuedAt + MaxLimitedSeconds) throw new ArgumentException("A limited-time license cannot run for more than 20 years; use LIFETIME instead");
+        }
+        else throw new ArgumentException($"Unsupported license type '{p.Type}'. Use LIFETIME or LIMITED");
+        if (p.Renews is not null && (p.Renews == p.LicenseId || p.TransferFrom is not null))
+            throw new ArgumentException("A license cannot renew itself, and cannot be both a renewal and a transfer");
         if (p.MaxNumbers < 1) throw new ArgumentException("At least one WhatsApp number must be authorised");
     }
+
+    private const long MaxLimitedSeconds = 20L * 366 * 24 * 3600;
 
     public static string B64Url(byte[] bytes) => Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
     public static byte[] FromB64Url(string s)

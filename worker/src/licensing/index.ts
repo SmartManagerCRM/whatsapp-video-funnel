@@ -14,11 +14,12 @@ export interface LicensePayload {
   tenant_id: string;
   tenant_slug: string;
   iat: number;                 // issue time (epoch seconds)
-  type: string;                // "LIFETIME"
-  exp?: number | null;         // absent/null for LIFETIME
+  type: string;                // "LIFETIME" (never expires) | "LIMITED" (requires exp)
+  exp?: number | null;         // absent for LIFETIME; required (epoch seconds) for LIMITED
   features: string[];
   max_numbers: number;
   transfer_from?: string;      // license id this license replaces (requires owner approval)
+  renews?: string;             // license id of THIS tenant's LIMITED license that this one extends or upgrades
 }
 
 export type LicenseFailure =
@@ -96,8 +97,9 @@ export async function activateLicense(
   if (payload.tenant_id !== tenant.id || payload.tenant_slug !== tenant.slug) {
     throw new LicenseError("wrong_tenant", "License was issued for a different tenant");
   }
-  if (payload.type !== "LIFETIME") throw new LicenseError("unsupported_type", "Unsupported license type");
-  // LIFETIME licenses never expire. If an expiry is *explicitly* present, honour it.
+  if (!LICENSE_TYPES.includes(payload.type)) throw new LicenseError("unsupported_type", "Unsupported license type");
+  // LIMITED licenses must carry an expiry. LIFETIME licenses never expire (an expiry, if explicitly present, is honoured).
+  if (payload.type === "LIMITED" && payload.exp == null) throw new LicenseError("malformed", "A limited-time license must have an expiration date");
   if (payload.exp != null && payload.exp * 1000 < Date.now()) throw new LicenseError("expired", "License has expired");
 
   const existing = await env.DB.prepare("SELECT * FROM licenses WHERE id = ?").bind(payload.lid).first<{
@@ -120,12 +122,30 @@ export async function activateLicense(
   }
 
   const now = nowIso();
-  // One active license per tenant: retire the previous one (only reachable via an approved transfer/re-issue flow).
+  // Renewal / upgrade: a new token that names the tenant's own LIMITED license supersedes it.
+  let renewed: string | null = null;
+  if (payload.renews) {
+    const old = await env.DB.prepare("SELECT id, tenant_id, license_type, status FROM licenses WHERE id = ?").bind(payload.renews).first<{
+      id: string; tenant_id: string; license_type: string; status: string;
+    }>();
+    if (!old || old.tenant_id !== tenant.id) throw new LicenseError("malformed", "This license renews a license that is not registered to your account");
+    if (old.status === "revoked") throw new LicenseError("revoked", "The license being renewed has been revoked");
+    if (old.status === "suspended") throw new LicenseError("suspended", "The license being renewed is suspended; ask SmartManager to reinstate it first");
+    if (old.status === "transferred") throw new LicenseError("transferred", "The license being renewed is no longer current");
+    if (old.license_type !== "LIMITED") throw new LicenseError("malformed", "Only a limited-time license can be renewed or upgraded");
+    renewed = old.id;
+  }
+  // One active license per tenant.
   const active = await env.DB.prepare("SELECT id FROM licenses WHERE tenant_id = ? AND status = 'active'").bind(tenant.id).first<{ id: string }>();
-  if (active && payload.transfer_from !== active.id) {
+  if (active && payload.transfer_from !== active.id && renewed !== active.id) {
     throw new LicenseError("already_used", "This tenant already has an active license");
   }
   await env.DB.batch([
+    ...(renewed ? [
+      env.DB.prepare("UPDATE licenses SET status = 'transferred' WHERE id = ?").bind(renewed), // 'transferred' also marks superseded licenses; license_events tells them apart
+      env.DB.prepare("INSERT INTO license_events (id, license_id, tenant_id, event, detail, created_at) VALUES (?,?,?,?,?,?)")
+        .bind(newId("lev"), renewed, tenant.id, "superseded_by", payload.lid, now),
+    ] : []),
     env.DB.prepare(
       `INSERT INTO licenses (id, tenant_id, product_id, client_name, license_type, features, max_whatsapp_numbers,
          issued_at, expires_at, status, token, activated_at, last_verified_at)
@@ -141,6 +161,8 @@ export async function activateLicense(
   return payload;
 }
 
+export const LICENSE_TYPES = ["LIFETIME", "LIMITED"];
+
 export interface LicenseStatus {
   valid: boolean;
   reason?: LicenseFailure;
@@ -148,7 +170,7 @@ export interface LicenseStatus {
   license?: {
     id: string; type: string; client_name: string; tenant_id: string; status: string;
     activated_at: string; registered_phone: string | null; features: string[];
-    max_whatsapp_numbers: number; expires_at: string | null; lifetime: boolean;
+    max_whatsapp_numbers: number; expires_at: string | null; lifetime: boolean; days_left: number | null; expiring_soon: boolean;
   };
   grace?: boolean;
 }
@@ -170,6 +192,8 @@ export async function getLicenseStatus(env: Env, tenantId: string): Promise<Lice
     id: row.id, type: row.license_type, client_name: row.client_name, tenant_id: row.tenant_id, status: row.status,
     activated_at: row.activated_at, registered_phone: row.registered_phone, features: safeJson<string[]>(row.features, []),
     max_whatsapp_numbers: row.max_whatsapp_numbers, expires_at: row.expires_at, lifetime: row.license_type === "LIFETIME" && !row.expires_at,
+    days_left: row.expires_at ? Math.ceil((new Date(row.expires_at).getTime() - Date.now()) / 86_400_000) : null,
+    expiring_soon: !!row.expires_at && new Date(row.expires_at).getTime() - Date.now() < 30 * 86_400_000,
   };
   // Explicit revocation/suspension is final: the grace mechanism never overrides it.
   if (row.status === "revoked") return { valid: false, reason: "revoked", message: "License has been revoked", license: view };

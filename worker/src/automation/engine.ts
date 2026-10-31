@@ -581,7 +581,7 @@ export async function handleInbound(env: Env, tenantId: string, m: InboundMessag
       await event(env, tenantId, conv.id, "inbound_during_human_handling");
       return;
     case "PAUSED":
-      if (conv.paused_reason === "window_expired" || conv.paused_reason === "automation_disabled" || conv.paused_reason === "whatsapp_not_verified") {
+      if (["window_expired", "automation_disabled", "whatsapp_not_verified", "license_expired", "license_not_activated"].includes(conv.paused_reason ?? "")) {
         await autoResumeAfterPause(ctx, conv, cu);
       }
       return;

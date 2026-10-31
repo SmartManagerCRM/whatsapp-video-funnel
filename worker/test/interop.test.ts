@@ -26,3 +26,24 @@ describe("cross-language license compatibility (.NET signer → Worker verifier)
     expect(other.valid).toBe(false); expect(other.reason).toBe("bad_signature");
   });
 });
+
+describe("cross-language: limited license and renewal signed by the C# generator", () => {
+  const f = fixture as any;
+  it("Worker verifies and activates the C# LIMITED license, then accepts the C# renewal that supersedes it", async () => {
+    await env.DB.prepare("INSERT INTO tenants (id, slug, business_name, status, created_at, updated_at) VALUES (?,?,?,'active',?,?)").bind(f.limited.tenantId, f.limited.tenantSlug, "Interop Ltd", nowIso(), nowIso()).run();
+    const t = { id: f.limited.tenantId, slug: f.limited.tenantSlug };
+    const claims = await verifyToken(dotnetEnv, f.limited.token);
+    expect(claims).toMatchObject({ type: "LIMITED", tenant_id: "tnt_interop_ltd" });
+    expect(claims.exp).toBeGreaterThan(Date.now() / 1000);
+    await activateLicense(dotnetEnv, t, f.limited.token, "test");
+    let st = await getLicenseStatus(dotnetEnv, t.id);
+    expect(st.valid).toBe(true); expect(st.license).toMatchObject({ type: "LIMITED", lifetime: false });
+    expect(st.license!.days_left).toBeGreaterThan(3000);
+    // the renewal claims it renews the limited license
+    expect((await verifyToken(dotnetEnv, f.renewal.token)).renews).toBe(f.limited.licenseId);
+    await activateLicense(dotnetEnv, t, f.renewal.token, "test");
+    st = await getLicenseStatus(dotnetEnv, t.id);
+    expect(st.license?.id).toBe(f.renewal.licenseId); expect(st.license!.days_left).toBeGreaterThan(4000);
+    expect((await env.DB.prepare("SELECT status FROM licenses WHERE id = ?").bind(f.limited.licenseId).first<any>()).status).toBe("transferred");
+  });
+});

@@ -15,9 +15,10 @@
         <StackPanel Margin="20">
           <TextBlock Text="SmartManager License Generator" FontSize="24" FontWeight="SemiBold"/>
           <TextBlock Text="Platform-owner tool. Issues RSA-signed lifetime licenses (.smlic). Never deploy this application or its private key to Cloudflare." Foreground="#475569" TextWrapping="Wrap" Margin="0,4,0,20"/>
-          <UniformGrid Columns="3" Margin="0,0,0,12">
+          <UniformGrid Columns="4" Margin="0,0,0,12">
             <Border Background="White" Padding="16" Margin="0,0,8,0" CornerRadius="8"><StackPanel><TextBlock Text="Licenses issued" Foreground="#64748B"/><TextBlock x:Name="StatIssued" FontSize="30" FontWeight="SemiBold"/></StackPanel></Border>
             <Border Background="White" Padding="16" Margin="0,0,8,0" CornerRadius="8"><StackPanel><TextBlock Text="Transferred (local note)" Foreground="#64748B"/><TextBlock x:Name="StatTransferred" FontSize="30" FontWeight="SemiBold"/></StackPanel></Border>
+            <Border Background="White" Padding="16" Margin="0,0,8,0" CornerRadius="8"><StackPanel><TextBlock Text="Expiring within 30 days" Foreground="#64748B"/><TextBlock x:Name="StatExpiring" FontSize="30" FontWeight="SemiBold" Foreground="#B45309"/></StackPanel></Border>
             <Border Background="White" Padding="16" CornerRadius="8"><StackPanel><TextBlock Text="Signing key" Foreground="#64748B"/><TextBlock x:Name="StatKey" FontSize="18" FontWeight="SemiBold" TextWrapping="Wrap"/></StackPanel></Border>
           </UniformGrid>
           <TextBlock x:Name="DashHint" Foreground="#B45309" TextWrapping="Wrap"/>
@@ -30,7 +31,21 @@
           <TextBlock Text="Tenant ID (from the Owner portal, e.g. tnt_ab12…)" Style="{StaticResource Label}"/><TextBox x:Name="GenTenantId"/>
           <TextBlock Text="Tenant slug (the /t/&lt;slug&gt;/ in the client URL)" Style="{StaticResource Label}"/><TextBox x:Name="GenSlug"/>
           <TextBlock Text="Product" Style="{StaticResource Label}"/><ComboBox x:Name="GenProduct" IsEnabled="False"><ComboBoxItem IsSelected="True" Content="SmartManager WhatsApp Video Funnel"/></ComboBox>
-          <TextBlock Text="License type" Style="{StaticResource Label}"/><ComboBox x:Name="GenType" IsEnabled="False"><ComboBoxItem IsSelected="True" Content="LIFETIME (no expiration)"/></ComboBox>
+          <TextBlock Text="License type" Style="{StaticResource Label}"/>
+          <ComboBox x:Name="GenType" SelectionChanged="GenType_Changed">
+            <ComboBoxItem IsSelected="True" Tag="LIFETIME" Content="LIFETIME (one-time purchase, never expires)"/>
+            <ComboBoxItem Tag="LIMITED" Content="LIMITED (expires on a date)"/>
+          </ComboBox>
+          <StackPanel x:Name="GenExpiryPanel" Visibility="Collapsed">
+            <TextBlock Text="Expiry date (valid through the end of this day, UTC)" Style="{StaticResource Label}"/>
+            <DatePicker x:Name="GenExpiry" Margin="0,2,0,6" HorizontalAlignment="Left" Width="220"/>
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+              <Button Content="+1 month" Style="{StaticResource Secondary}" Click="GenAdd1m_Click"/>
+              <Button Content="+3 months" Style="{StaticResource Secondary}" Click="GenAdd3m_Click"/>
+              <Button Content="+6 months" Style="{StaticResource Secondary}" Click="GenAdd6m_Click"/>
+              <Button Content="+1 year" Style="{StaticResource Secondary}" Click="GenAdd1y_Click"/>
+            </StackPanel>
+          </StackPanel>
           <TextBlock Text="Authorized features" Style="{StaticResource Label}"/>
           <StackPanel Margin="0,4,0,10"><CheckBox x:Name="FeatFunnel" Content="video-funnel (video sequences &amp; automation)" IsChecked="True" IsEnabled="False"/><CheckBox x:Name="FeatCoexist" Content="coexistence (WhatsApp Business app + API on one number)" IsChecked="True" Margin="0,4,0,0"/></StackPanel>
           <TextBlock Text="Authorized WhatsApp numbers" Style="{StaticResource Label}"/><TextBox x:Name="GenNumbers" Text="1" Width="80" HorizontalAlignment="Left"/>
@@ -50,7 +65,8 @@
               <DataGridTextColumn Header="Client" Binding="{Binding ClientName}" Width="*"/>
               <DataGridTextColumn Header="Slug" Binding="{Binding TenantSlug}" Width="140"/>
               <DataGridTextColumn Header="Type" Binding="{Binding Type}" Width="90"/>
-              <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="100"/>
+              <DataGridTextColumn Header="Status" Binding="{Binding StatusDisplay}" Width="100"/>
+              <DataGridTextColumn Header="Expires" Binding="{Binding ExpiresDisplay}" Width="100"/>
               <DataGridTextColumn Header="Issued (UTC)" Binding="{Binding IssuedAt, StringFormat=yyyy-MM-dd HH:mm}" Width="140"/>
             </DataGrid.Columns>
           </DataGrid>
@@ -81,6 +97,22 @@
           <Button Content="Issue transfer license" Click="Transfer_Click" HorizontalAlignment="Left"/>
           <TextBlock Margin="0,12,0,0" Foreground="#B45309" TextWrapping="Wrap" Text="Before the new client activates it: open the Owner portal → Tenants → the OLD tenant → Licenses → 'Approve transfer' and enter the new tenant ID. The new license only activates after that approval, and the old license stops working."/>
           <TextBlock x:Name="XferResult" Margin="0,12,0,0" Foreground="#0F766E" FontWeight="SemiBold" TextWrapping="Wrap"/>
+        </StackPanel></ScrollViewer>
+      </TabItem>
+
+
+      <TabItem Header="Renew / Upgrade">
+        <ScrollViewer><StackPanel Margin="20" MaxWidth="560" HorizontalAlignment="Left">
+          <TextBlock x:Name="RenewInfo" Text="Select a LIMITED license in 'Issued Licenses' first." TextWrapping="Wrap" Margin="0,0,0,12"/>
+          <RadioButton x:Name="RenewExtend" GroupName="RenewMode" IsChecked="True" Content="Extend until a new date" Margin="0,0,0,6" Checked="RenewMode_Changed"/>
+          <StackPanel x:Name="RenewDatePanel" Margin="22,0,0,10">
+            <DatePicker x:Name="RenewDate" HorizontalAlignment="Left" Width="220"/>
+            <StackPanel Orientation="Horizontal" Margin="0,6,0,0"><Button Content="+3 months" Style="{StaticResource Secondary}" Click="RenewAdd3m_Click"/><Button Content="+1 year" Style="{StaticResource Secondary}" Click="RenewAdd1y_Click"/></StackPanel>
+          </StackPanel>
+          <RadioButton x:Name="RenewLifetime" GroupName="RenewMode" Content="Upgrade to LIFETIME (never expires)" Margin="0,0,0,12" Checked="RenewMode_Changed"/>
+          <Button Content="Issue renewal license" Click="Renew_Click" HorizontalAlignment="Left"/>
+          <TextBlock Margin="0,12,0,0" Foreground="#475569" TextWrapping="Wrap" Text="This issues a NEW license for the same client. When the client activates it (License page), it replaces the old one - no owner approval is needed. A client whose license has already expired can still activate a renewal; the bot resumes the next time a customer writes. LIFETIME licenses never need renewing."/>
+          <TextBlock x:Name="RenewResult" Margin="0,12,0,0" Foreground="#0F766E" FontWeight="SemiBold" TextWrapping="Wrap"/>
         </StackPanel></ScrollViewer>
       </TabItem>
 

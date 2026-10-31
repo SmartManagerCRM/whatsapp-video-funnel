@@ -283,3 +283,40 @@ describe("logo & misc", () => {
     expect(await verifyPassword("a-long-password", h)).toBe(true); expect(await verifyPassword("nope", h)).toBe(false);
   });
 });
+
+describe("languages & currency", () => {
+  it("bot speaks French and Arabic out of the box, and tenant overrides win", async () => {
+    for (const [lang, needle] of [["fr", "Bienvenue chez"], ["ar", "أهلاً بكم في"]] as const) {
+      const t = await readyTenant();
+      await env.DB.prepare("UPDATE tenant_settings SET default_language = ? WHERE tenant_id = ?").bind(lang, t.id).run();
+      await customerSays(t, "201444000001", { text: "hi" });
+      expect(meta.sent[0].text.body).toContain(needle);
+      expect(meta.sent[1].interactive.action.button).toBe(lang === "fr" ? "Choisir" : "اختيار");
+      meta.reset();
+    }
+    const t = await readyTenant(); const s = await login(t.slug, t.email);
+    await env.DB.prepare("UPDATE tenant_settings SET default_language = 'fr' WHERE tenant_id = ?").bind(t.id).run();
+    await api(s, "PUT", "/templates", { key: "welcome", language: "fr", body: "Salut {{business}} !" });
+    await customerSays(t, "201444000002", { text: "hi" });
+    expect(meta.sent[0].text.body).toContain("Salut Biz");
+    const list = (await (await api(s, "GET", "/templates?language=ar")).json()) as any;
+    expect(list.languages).toEqual(expect.arrayContaining(["en", "fr", "ar"]));
+    expect(list.templates.find((x: any) => x.key === "goodbye").default).toContain("شكراً");
+  });
+
+  it("every built-in message has a French and an Arabic translation", async () => {
+    const { DEFAULT_TEMPLATES, TRANSLATIONS } = await import("../src/automation/templates");
+    for (const lang of ["fr", "ar"]) for (const key of Object.keys(DEFAULT_TEMPLATES)) expect(TRANSLATIONS[lang][key], `${lang}.${key}`).toBeDefined();
+  });
+
+  it("currency setting: stored, defaulted to USD, validated", async () => {
+    const t = await readyTenant(); const s = await login(t.slug, t.email);
+    const cur = (await (await api(s, "GET", "/settings")).json()) as any;
+    expect(cur.currency).toBe("USD");
+    expect((await api(s, "PUT", "/settings", { ...cur, currency: "SAR" })).status).toBe(200);
+    expect(((await (await api(s, "GET", "/settings")).json()) as any).currency).toBe("SAR");
+    expect((await api(s, "PUT", "/settings", { ...cur, currency: "sar" })).status).toBe(200); // normalised
+    expect(((await (await api(s, "GET", "/settings")).json()) as any).currency).toBe("SAR");
+    for (const bad of ["US", "DOLLAR", "12$", "", null]) expect((await api(s, "PUT", "/settings", { ...cur, currency: bad })).status).toBe(400);
+  });
+});

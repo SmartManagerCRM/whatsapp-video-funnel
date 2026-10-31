@@ -1,10 +1,13 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { AlertTriangle, CheckCircle2, Info, Loader2, X } from "lucide-react";
+import { LANGS, getLang, locale, setLang, subscribeLang, t, type Lang } from "./i18n";
+import { currencyGroups } from "./currencies";
+import { useSyncExternalStore } from "react";
 
 export const cx = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(" ");
 
 // ---------------------------------------------------------------- primitives
-export function Spinner({ className }: { className?: string }) { return <Loader2 className={cx("animate-spin text-brand-600", className ?? "h-5 w-5")} aria-label="Loading" />; }
+export function Spinner({ className }: { className?: string }) { return <Loader2 className={cx("animate-spin text-brand-600", className ?? "h-5 w-5")} aria-label={t("Loading")} />; }
 export const Loading = () => <div className="flex justify-center py-16" role="status"><Spinner className="h-7 w-7" /></div>;
 
 type BtnProps = ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "primary" | "secondary" | "danger" | "ghost"; loading?: boolean };
@@ -53,7 +56,7 @@ export const STATUS_TONE: Record<string, string> = {
   coexistence_verified: "green", connected: "blue", onboarding_pending: "amber", disconnected: "red", token_invalid: "red", webhook_incomplete: "amber", not_connected: "slate",
   queued: "slate", submitted: "blue", sent: "blue", delivered: "green", read: "green",
 };
-export const StatusBadge = ({ value }: { value: string }) => <Badge tone={(STATUS_TONE[value] ?? "slate") as any}>{value.replace(/_/g, " ")}</Badge>;
+export const StatusBadge = ({ value }: { value: string }) => <Badge tone={(STATUS_TONE[value] ?? "slate") as any}>{t(value.replace(/_/g, " "))}</Badge>;
 
 export const Empty = ({ icon, title, hint, action }: { icon?: ReactNode; title: string; hint?: string; action?: ReactNode }) => (
   <div className="flex flex-col items-center rounded-2xl border border-dashed border-slate-300 bg-white/60 px-6 py-14 text-center">
@@ -81,7 +84,7 @@ export function Toggle({ checked, onChange, label }: { checked: boolean; onChang
   return (
     <button type="button" role="switch" aria-checked={checked} aria-label={label} onClick={() => onChange(!checked)}
       className={cx("relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition", checked ? "bg-brand-600" : "bg-slate-300")}>
-      <span className={cx("inline-block h-5 w-5 rounded-full bg-white shadow transition", checked ? "translate-x-5" : "translate-x-0.5")} />
+      <span className={cx("inline-block h-5 w-5 rounded-full bg-white shadow transition", checked ? "translate-x-5 rtl:-translate-x-5" : "translate-x-0.5 rtl:-translate-x-0.5")} />
     </button>
   );
 }
@@ -98,7 +101,7 @@ export function Modal({ open, onClose, title, children, wide }: { open: boolean;
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/50 p-0 backdrop-blur-sm sm:items-center sm:p-4" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div role="dialog" aria-modal="true" aria-label={title} className={cx("rise max-h-[92vh] w-full overflow-y-auto rounded-t-2xl bg-white p-5 shadow-2xl sm:rounded-2xl", wide ? "sm:max-w-3xl" : "sm:max-w-lg")}>
         <div className="mb-4 flex items-center justify-between"><h2 className="text-lg font-semibold">{title}</h2>
-          <button onClick={onClose} aria-label="Close" className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100"><X className="h-5 w-5" /></button></div>
+          <button onClick={onClose} aria-label={t("Close")} className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100"><X className="h-5 w-5" /></button></div>
         {children}
       </div>
     </div>
@@ -116,22 +119,22 @@ export function UiProvider({ children }: { children: ReactNode }) {
   const id = useRef(0);
   const toast = useCallback((text: string, tone: Toast["tone"] = "ok") => {
     const n = ++id.current; setToasts((t) => [...t, { id: n, tone, text }]);
-    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== n)), tone === "error" ? 7000 : 3500);
+    setTimeout(() => setToasts((list) => list.filter((x) => x.id !== n)), tone === "error" ? 7000 : 3500);
   }, []);
   const confirm = useCallback((o: Parameters<UiCtx["confirm"]>[0]) => new Promise<boolean>((resolve) => setDlg({ ...o, resolve })), []);
   return (
     <Ctx.Provider value={{ toast, confirm }}>
       {children}
       <div className="pointer-events-none fixed inset-x-0 top-3 z-[60] flex flex-col items-center gap-2 px-3 safe-top" aria-live="polite">
-        {toasts.map((t) => (
-          <div key={t.id} className={cx("rise pointer-events-auto max-w-md rounded-xl px-4 py-2.5 text-sm font-medium text-white shadow-lg", t.tone === "ok" ? "bg-emerald-700" : t.tone === "error" ? "bg-rose-700" : "bg-slate-800")}>{t.text}</div>
+        {toasts.map((x) => (
+          <div key={x.id} className={cx("rise pointer-events-auto max-w-md rounded-xl px-4 py-2.5 text-sm font-medium text-white shadow-lg", x.tone === "ok" ? "bg-emerald-700" : x.tone === "error" ? "bg-rose-700" : "bg-slate-800")}>{t(x.text)}</div>
         ))}
       </div>
       <Modal open={!!dlg} onClose={() => { dlg?.resolve(false); setDlg(null); }} title={dlg?.title ?? ""}>
         {dlg?.body && <p className="mb-5 text-sm text-slate-600">{dlg.body}</p>}
         <div className="flex justify-end gap-2">
-          <Button variant="secondary" onClick={() => { dlg?.resolve(false); setDlg(null); }}>Cancel</Button>
-          <Button variant={dlg?.danger ? "danger" : "primary"} onClick={() => { dlg?.resolve(true); setDlg(null); }}>{dlg?.confirmLabel ?? "Confirm"}</Button>
+          <Button variant="secondary" onClick={() => { dlg?.resolve(false); setDlg(null); }}>{t("Cancel")}</Button>
+          <Button variant={dlg?.danger ? "danger" : "primary"} onClick={() => { dlg?.resolve(true); setDlg(null); }}>{dlg?.confirmLabel ?? t("Confirm")}</Button>
         </div>
       </Modal>
     </Ctx.Provider>
@@ -165,7 +168,7 @@ export function useAction() {
 // ---------------------------------------------------------------- tiny charts (no dependency)
 export function BarChart({ data, height = 140 }: { data: { label: string; value: number; value2?: number }[]; height?: number }) {
   const max = Math.max(1, ...data.map((d) => d.value));
-  if (!data.length) return <p className="py-8 text-center text-sm text-slate-400">No data for this period</p>;
+  if (!data.length) return <p className="py-8 text-center text-sm text-slate-400">{t("No data for this period")}</p>;
   return (
     <div className="flex items-end gap-1.5 overflow-x-auto pb-1" style={{ height: height + 28 }} role="img" aria-label="Bar chart">
       {data.map((d) => (
@@ -182,7 +185,7 @@ export function BarChart({ data, height = 140 }: { data: { label: string; value:
 
 export function HBar({ rows }: { rows: { label: string; value: number; sub?: string }[] }) {
   const max = Math.max(1, ...rows.map((r) => r.value));
-  if (!rows.length) return <p className="py-6 text-center text-sm text-slate-400">No data yet</p>;
+  if (!rows.length) return <p className="py-6 text-center text-sm text-slate-400">{t("No data yet")}</p>;
   return <ul className="space-y-3">{rows.map((r) => (
     <li key={r.label}><div className="mb-1 flex justify-between text-sm"><span className="font-medium text-slate-700">{r.label}</span><span className="text-slate-500">{r.sub ?? r.value}</span></div>
       <div className="h-2 rounded-full bg-slate-100"><div className="h-2 rounded-full bg-brand-600" style={{ width: `${(r.value / max) * 100}%` }} /></div></li>
@@ -198,7 +201,33 @@ export const Stat = ({ label, value, hint, icon }: { label: string; value: React
 
 export function fmtDate(iso: string | null | undefined, tz?: string) {
   if (!iso) return "—";
-  try { return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short", timeZone: tz || undefined }).format(new Date(iso)); } catch { return iso; }
+  try { return new Intl.DateTimeFormat(locale(), { dateStyle: "medium", timeStyle: "short", timeZone: tz || undefined }).format(new Date(iso)); } catch { return iso; }
 }
 export const fmtBytes = (n: number) => (n > 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
 export const fmtDur = (s: number | null) => (s ? `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}` : "—");
+
+/** Language picker. Switching re-renders the whole app (keyed on the language) and flips page direction for Arabic. */
+export function useLang(): Lang { return useSyncExternalStore(subscribeLang, getLang); }
+export function LangSwitch({ dark }: { dark?: boolean }) {
+  const lang = useLang();
+  return (
+    <select aria-label="Language" value={lang} onChange={(e) => setLang(e.target.value as Lang)}
+      className={cx("rounded-lg border px-2 py-1.5 text-xs", dark ? "border-white/20 bg-white/10 text-white" : "border-slate-300 bg-white text-slate-700")}>
+      {LANGS.map((l) => <option key={l.code} value={l.code} className="text-slate-900">{l.label}</option>)}
+    </select>
+  );
+}
+
+/** Currency picker: all MENA currencies first, then every other ISO 4217 currency. Names follow the UI language. */
+export function CurrencySelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const lang = useLang();
+  const g = currencyGroups(lang);
+  const known = [...g.mena, ...g.other].some((c) => c.code === value);
+  return (
+    <Select value={value} onChange={(e) => onChange(e.target.value)} aria-label={t("Currency")}>
+      {!known && <option value={value}>{value}</option>}
+      <optgroup label={t("Middle East & North Africa")}>{g.mena.map((c) => <option key={c.code} value={c.code}>{c.code} — {c.name}</option>)}</optgroup>
+      <optgroup label={t("Other currencies (international)")}>{g.other.map((c) => <option key={c.code} value={c.code}>{c.code} — {c.name}</option>)}</optgroup>
+    </Select>
+  );
+}

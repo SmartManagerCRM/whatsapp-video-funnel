@@ -3,7 +3,9 @@
 // "SmartManager License Generator" with a production key that never touches this repo or Cloudflare.
 //
 //   node scripts/dev-license.mjs init                       create .dev-keys/ and put the public key in .dev.vars
-//   node scripts/dev-license.mjs issue <tenant-id> <slug> "<Client Name>" [transfer_from_license_id]
+//   node scripts/dev-license.mjs issue <tenant-id> <slug> "<Client Name>" [--limited-days N] [--renews LICENSE_ID] [--transfer-from LICENSE_ID]
+//     default: LIFETIME (never expires). --limited-days N makes a LIMITED license valid for N days.
+//     --renews LICENSE_ID extends/upgrades that tenant's LIMITED license (use with --limited-days, or alone to upgrade to LIFETIME).
 import { generateKeyPairSync, createSign, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 
@@ -23,13 +25,16 @@ if (cmd === "init") {
   writeFileSync(vars, `${prev.trimEnd()}\nLICENSE_PUBLIC_KEY="${pub.replace(/\n/g, "\\n")}"\n`);
   console.log("Dev keys created in worker/.dev-keys/ (git-ignored). Public key written to .dev.vars.");
 } else if (cmd === "issue") {
-  const [tenantId, slug, client, transferFrom] = args;
-  if (!tenantId || !slug || !client) { console.error('usage: issue <tenant-id> <slug> "<Client Name>" [transfer_from]'); process.exit(1); }
+  const [tenantId, slug, client, ...rest] = args;
+  const opt = (name) => { const i = rest.indexOf(name); return i >= 0 ? rest[i + 1] : undefined; };
+  const transferFrom = opt("--transfer-from"), renews = opt("--renews"), limitedDays = opt("--limited-days");
+  if (!tenantId || !slug || !client) { console.error('usage: issue <tenant-id> <slug> "<Client Name>" [--limited-days N] [--renews ID] [--transfer-from ID]'); process.exit(1); }
   const payload = {
     lid: `lic_${randomUUID().replace(/-/g, "").slice(0, 16)}`, pid: "smartmanager-whatsapp-video-funnel", product_name: "SmartManager WhatsApp Video Funnel",
     client_name: client, tenant_id: tenantId, tenant_slug: slug, iat: Math.floor(Date.now() / 1000), type: "LIFETIME",
-    features: ["video-funnel", "coexistence"], max_numbers: 1, ...(transferFrom ? { transfer_from: transferFrom } : {}),
+    features: ["video-funnel", "coexistence"], max_numbers: 1, ...(transferFrom ? { transfer_from: transferFrom } : {}), ...(renews ? { renews } : {}),
   };
+  if (limitedDays) { payload.type = "LIMITED"; payload.exp = payload.iat + Math.round(Number(limitedDays) * 86400); }
   const head = b64u(JSON.stringify({ alg: "RS256", typ: "SMLIC" }));
   const body = b64u(JSON.stringify(payload));
   const sig = createSign("RSA-SHA256").update(`${head}.${body}`).sign(readFileSync(new URL("private.pem", dir)));

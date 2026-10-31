@@ -31,6 +31,7 @@ export interface TenantSettings {
   business_name: string | null;
   timezone: string;
   default_language: string;
+  currency: string;
   delivery_mode: "automatic" | "manual" | "hybrid";
   default_delay_seconds: number;
   website_url: string | null;

@@ -44,13 +44,16 @@ public sealed class LicenseIssuer
     private readonly KeyStore _keys; private readonly IssuedRegister _register;
     public LicenseIssuer(KeyStore keys, IssuedRegister register) { _keys = keys; _register = register; }
 
-    public IssuedLicense Issue(string clientName, string tenantId, string tenantSlug, IEnumerable<string> features, int maxNumbers = 1, string? transferFrom = null, DateTimeOffset? now = null)
+    /// <param name="type">LIFETIME (default, never expires) or LIMITED (requires <paramref name="expiresAt"/>).</param>
+    public IssuedLicense Issue(string clientName, string tenantId, string tenantSlug, IEnumerable<string> features, int maxNumbers = 1, string? transferFrom = null, DateTimeOffset? now = null,
+        string type = LicensePayload.Lifetime, DateTimeOffset? expiresAt = null, string? renews = null)
     {
         var payload = new LicensePayload
         {
             LicenseId = LicenseSigner.NewLicenseId(), ClientName = clientName.Trim(), TenantId = tenantId.Trim(), TenantSlug = tenantSlug.Trim().ToLowerInvariant(),
-            IssuedAt = (now ?? DateTimeOffset.UtcNow).ToUnixTimeSeconds(), Type = LicensePayload.Lifetime, Expires = null,
+            IssuedAt = (now ?? DateTimeOffset.UtcNow).ToUnixTimeSeconds(), Type = type, Expires = expiresAt?.ToUnixTimeSeconds(),
             Features = features.Distinct().OrderBy(x => x).ToList(), MaxNumbers = maxNumbers, TransferFrom = string.IsNullOrWhiteSpace(transferFrom) ? null : transferFrom.Trim(),
+            Renews = string.IsNullOrWhiteSpace(renews) ? null : renews.Trim(),
         };
         using var priv = _keys.LoadPrivate();
         var token = LicenseSigner.Sign(payload, priv);
@@ -58,9 +61,25 @@ public sealed class LicenseIssuer
         {
             LicenseId = payload.LicenseId, ClientName = payload.ClientName, TenantId = payload.TenantId, TenantSlug = payload.TenantSlug, Type = payload.Type,
             Features = payload.Features, MaxNumbers = payload.MaxNumbers, IssuedAt = DateTimeOffset.FromUnixTimeSeconds(payload.IssuedAt),
-            KeyFingerprint = _keys.Fingerprint(), KeyProfile = _keys.Profile, TransferFrom = payload.TransferFrom, Token = token,
+            KeyFingerprint = _keys.Fingerprint(), KeyProfile = _keys.Profile, TransferFrom = payload.TransferFrom, Renews = payload.Renews,
+            ExpiresAt = payload.Expires is { } e ? DateTimeOffset.FromUnixTimeSeconds(e) : null, Token = token,
         };
         _register.Add(rec);
+        return rec;
+    }
+
+    /// <summary>
+    /// Extends a LIMITED license to a new date, or upgrades it to LIFETIME when <paramref name="newExpiry"/> is null.
+    /// Issues a NEW token (renews = old id) for the same tenant; the client activates it and it supersedes the old one.
+    /// A LIFETIME license never needs renewing.
+    /// </summary>
+    public IssuedLicense Renew(IssuedLicense old, DateTimeOffset? newExpiry, DateTimeOffset? now = null)
+    {
+        if (old.Type != LicensePayload.Limited) throw new InvalidOperationException("Only a LIMITED license can be renewed or upgraded; a LIFETIME license never expires");
+        if (old.Status is "Revoked" or "Transferred" or "Renewed") throw new InvalidOperationException($"This license is already {old.Status.ToLowerInvariant()} and cannot be renewed");
+        var rec = Issue(old.ClientName, old.TenantId, old.TenantSlug, old.Features, old.MaxNumbers, now: now,
+            type: newExpiry is null ? LicensePayload.Lifetime : LicensePayload.Limited, expiresAt: newExpiry, renews: old.LicenseId);
+        _register.SetStatus(old.LicenseId, "Renewed", newExpiry is null ? $"Upgraded to LIFETIME ({rec.LicenseId})" : $"Renewed until {newExpiry:yyyy-MM-dd} ({rec.LicenseId})");
         return rec;
     }
 }

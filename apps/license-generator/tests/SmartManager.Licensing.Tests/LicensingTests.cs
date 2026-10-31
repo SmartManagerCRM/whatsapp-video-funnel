@@ -107,6 +107,68 @@ public class LicensingTests : IDisposable
         Assert.Equal("smlic/1", doc.RootElement.GetProperty("format").GetString()); Assert.Equal("a.b.c", doc.RootElement.GetProperty("token").GetString());
     }
 
+    private static readonly DateTimeOffset T0 = new(2026, 1, 15, 0, 0, 0, TimeSpan.Zero);
+
+    [Fact]
+    public void Limited_license_carries_an_expiry_and_lifetime_still_has_none()
+    {
+        var keys = NewKeys(); var issuer = new LicenseIssuer(keys, new IssuedRegister(_root, "development"));
+        var ltd = issuer.Issue("A", "tnt_1", "client-a", new[] { "video-funnel" }, now: T0, type: "LIMITED", expiresAt: T0.AddYears(1));
+        using var pub = keys.LoadPublic();
+        Assert.True(LicenseSigner.TryVerify(ltd.Token, pub, out var p));
+        Assert.Equal("LIMITED", p!.Type); Assert.Equal(T0.AddYears(1).ToUnixTimeSeconds(), p.Expires);
+        Assert.Equal(T0.AddYears(1), ltd.ExpiresAt); Assert.Equal("2027-01-15", ltd.ExpiresDisplay);
+        var life = issuer.Issue("B", "tnt_2", "client-b", new[] { "video-funnel" }, now: T0);
+        using var doc = JsonDocument.Parse(LicenseSigner.FromB64Url(life.Token.Split('.')[1]));
+        Assert.Equal("LIFETIME", doc.RootElement.GetProperty("type").GetString()); Assert.False(doc.RootElement.TryGetProperty("exp", out _));
+        Assert.Equal("never", life.ExpiresDisplay); Assert.Null(life.DaysLeft);
+    }
+
+    [Fact]
+    public void Validation_enforces_expiry_rules_per_type()
+    {
+        var keys = NewKeys(); var issuer = new LicenseIssuer(keys, new IssuedRegister(_root, "development"));
+        Assert.Throws<ArgumentException>(() => issuer.Issue("A", "t", "client-a", new[] { "f" }, now: T0, type: "LIMITED"));                                   // no expiry
+        Assert.Throws<ArgumentException>(() => issuer.Issue("A", "t", "client-a", new[] { "f" }, now: T0, type: "LIMITED", expiresAt: T0));                    // not after issue date
+        Assert.Throws<ArgumentException>(() => issuer.Issue("A", "t", "client-a", new[] { "f" }, now: T0, type: "LIMITED", expiresAt: T0.AddDays(-1)));       // in the past
+        Assert.Throws<ArgumentException>(() => issuer.Issue("A", "t", "client-a", new[] { "f" }, now: T0, type: "LIMITED", expiresAt: T0.AddYears(25)));      // > 20 years
+        Assert.Throws<ArgumentException>(() => issuer.Issue("A", "t", "client-a", new[] { "f" }, now: T0, type: "LIFETIME", expiresAt: T0.AddYears(1)));      // lifetime with a date
+        Assert.Throws<ArgumentException>(() => issuer.Issue("A", "t", "client-a", new[] { "f" }, now: T0, type: "ANNUAL", expiresAt: T0.AddYears(1)));        // unknown type
+        Assert.Empty(new IssuedRegister(_root, "development").All());                                                                                           // nothing registered on failure
+    }
+
+    [Fact]
+    public void Renewal_extends_a_limited_license_and_marks_the_old_one()
+    {
+        var keys = NewKeys(); var reg = new IssuedRegister(_root, "development"); var issuer = new LicenseIssuer(keys, reg);
+        var old = issuer.Issue("A", "tnt_1", "client-a", new[] { "video-funnel" }, now: T0, type: "LIMITED", expiresAt: T0.AddMonths(3));
+        var renewed = issuer.Renew(old, T0.AddYears(1), now: T0.AddMonths(2));
+        var claims = LicenseSigner.DecodeUnverified(renewed.Token)!;
+        Assert.Equal(old.LicenseId, claims.Renews); Assert.Equal("LIMITED", claims.Type); Assert.Equal(T0.AddYears(1).ToUnixTimeSeconds(), claims.Expires);
+        Assert.Equal("tnt_1", claims.TenantId); Assert.Equal("client-a", claims.TenantSlug);
+        Assert.Equal("Renewed", reg.All().First(x => x.LicenseId == old.LicenseId).Status);
+        Assert.Throws<InvalidOperationException>(() => issuer.Renew(reg.All().First(x => x.LicenseId == old.LicenseId), T0.AddYears(2))); // already renewed
+    }
+
+    [Fact]
+    public void Upgrade_to_lifetime_has_no_expiry_and_a_lifetime_license_cannot_be_renewed()
+    {
+        var keys = NewKeys(); var reg = new IssuedRegister(_root, "development"); var issuer = new LicenseIssuer(keys, reg);
+        var old = issuer.Issue("A", "tnt_1", "client-a", new[] { "video-funnel" }, now: T0, type: "LIMITED", expiresAt: T0.AddMonths(1));
+        var up = issuer.Renew(old, null, now: T0);
+        var claims = LicenseSigner.DecodeUnverified(up.Token)!;
+        Assert.Equal("LIFETIME", claims.Type); Assert.Null(claims.Expires); Assert.Equal(old.LicenseId, claims.Renews);
+        Assert.Throws<InvalidOperationException>(() => issuer.Renew(up, T0.AddYears(1)));
+    }
+
+    [Fact]
+    public void Register_shows_expired_for_limited_licenses_past_their_date()
+    {
+        var past = new IssuedLicense { LicenseId = "x", Type = "LIMITED", ExpiresAt = DateTimeOffset.UtcNow.AddDays(-2) };
+        var soon = new IssuedLicense { LicenseId = "y", Type = "LIMITED", ExpiresAt = DateTimeOffset.UtcNow.AddDays(10) };
+        Assert.Equal("Expired", past.StatusDisplay); Assert.Equal("Issued", soon.StatusDisplay); Assert.InRange(soon.DaysLeft!.Value, 9, 11);
+    }
+
     /// <summary>Writes a token signed by THIS code for the Worker's cross-language verification test (run with SM_FIXTURE_OUT set).</summary>
     [Fact]
     public void Emit_fixture_for_worker_compat_test()
@@ -114,7 +176,12 @@ public class LicensingTests : IDisposable
         var path = Environment.GetEnvironmentVariable("SM_FIXTURE_OUT"); if (path is null) return;
         var keys = NewKeys(); var issuer = new LicenseIssuer(keys, new IssuedRegister(_root, "development"));
         var rec = issuer.Issue("Interop Client", "tnt_interop", "interop-client", new[] { "video-funnel", "coexistence" });
+        // Limited license + its renewal for a second tenant. Expiry is ~10 years out so the committed fixture stays valid for years.
+        var ltd = issuer.Issue("Interop Limited", "tnt_interop_ltd", "interop-limited", new[] { "video-funnel" }, type: "LIMITED", expiresAt: DateTimeOffset.UtcNow.AddYears(10));
+        var renewal = issuer.Renew(ltd, DateTimeOffset.UtcNow.AddYears(12));
         File.WriteAllText(path, JsonSerializer.Serialize(new { note = "DEVELOPMENT/TEST key generated by the C# License Generator tests. Not a production key.",
-            publicPem = keys.PublicKeyPem(), token = rec.Token, tenantId = rec.TenantId, tenantSlug = rec.TenantSlug, licenseId = rec.LicenseId }, new JsonSerializerOptions { WriteIndented = true }));
+            publicPem = keys.PublicKeyPem(), token = rec.Token, tenantId = rec.TenantId, tenantSlug = rec.TenantSlug, licenseId = rec.LicenseId,
+            limited = new { token = ltd.Token, tenantId = ltd.TenantId, tenantSlug = ltd.TenantSlug, licenseId = ltd.LicenseId },
+            renewal = new { token = renewal.Token, licenseId = renewal.LicenseId, renews = ltd.LicenseId } }, new JsonSerializerOptions { WriteIndented = true }));
     }
 }
