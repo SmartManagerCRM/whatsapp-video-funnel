@@ -55,6 +55,11 @@ app.get("/t/:slug/manifest.webmanifest", async (c) => {
   }), { headers: { "Content-Type": "application/manifest+json", "Cache-Control": "public, max-age=3600" } });
 });
 
+app.get("/owner/manifest.webmanifest", () => new Response(JSON.stringify({
+  id: "/owner/", name: "SmartManager Platform Owner", short_name: "SM Owner", start_url: "/owner/", scope: "/owner/", display: "standalone",
+  background_color: "#0b1220", theme_color: "#0f766e", icons: [{ src: "/icons/icon-192.png", sizes: "192x192", type: "image/png" }, { src: "/icons/icon-512.png", sizes: "512x512", type: "image/png" }],
+}), { headers: { "Content-Type": "application/manifest+json" } }));
+
 const tenantApi = new Hono<AppEnv>();
 tenantApi.route("/auth", tenantAuth);
 tenantApi.use("*", async (c, next) => (c.req.path.includes("/api/auth/") ? next() : requireTenantSession(c, next)));
@@ -74,7 +79,7 @@ app.route("/owner/api", ownerRoot);
 // ---------------------------------------------------------------- SPA + static assets
 async function spa(c: { env: Env; req: { url: string; raw: Request } }) {
   const url = new URL(c.req.url);
-  url.pathname = "/index.html";
+  url.pathname = "/"; // Static Assets canonicalises /index.html -> / (a redirect), so ask for the root document directly
   const res = await c.env.ASSETS.fetch(new Request(url.toString(), c.req.raw));
   const out = new Response(res.body, res);
   out.headers.set("Cache-Control", "no-cache");
