@@ -29,7 +29,7 @@ const lic = JSON.parse(readFileSync(process.env.LIC, "utf8"));
 await page.fill("textarea", JSON.stringify(lic));
 await page.click('button:has-text("Activate")');
 await page.waitForSelector("text=License details"); ok("license activated via UI", true);
-ok("license shows lifetime", await page.isVisible("text=Yes — no expiry date"));
+ok("license shows lifetime", await page.isVisible("text=Never expires"));
 await page.screenshot({ path: "/tmp/e2e/03-license.png" });
 
 // category via UI

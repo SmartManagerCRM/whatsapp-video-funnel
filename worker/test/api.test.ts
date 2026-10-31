@@ -320,3 +320,40 @@ describe("languages & currency", () => {
     for (const bad of ["US", "DOLLAR", "12$", "", null]) expect((await api(s, "PUT", "/settings", { ...cur, currency: bad })).status).toBe(400);
   });
 });
+
+describe("header currency & owner preferences", () => {
+  it("tenant can change currency quickly; invalid codes and viewers are refused", async () => {
+    const t = await createTenant(); const s = await login(t.slug, t.email);
+    expect((await api(s, "PUT", "/settings/currency", { currency: "aed" })).status).toBe(200);
+    expect(((await (await api(s, "GET", "/settings")).json()) as any).currency).toBe("AED");
+    expect((await api(s, "PUT", "/settings/currency", { currency: "DIRHAM" })).status).toBe(400);
+    expect((await api(s, "PUT", "/settings/currency", {})).status).toBe(400);
+    await env.DB.prepare("UPDATE tenant_users SET role = 'viewer' WHERE tenant_id = ?").bind(t.id).run();
+    const v = await login(t.slug, t.email);
+    expect((await api(v, "PUT", "/settings/currency", { currency: "EUR" })).status).toBe(403);
+  });
+
+  it("one tenant cannot change another tenant's currency", async () => {
+    const a = await createTenant(); const b = await createTenant(); const sa = await login(a.slug, a.email);
+    await api(sa, "PUT", "/settings/currency", { currency: "QAR" }, { slug: b.slug });
+    expect((await env.DB.prepare("SELECT currency FROM tenant_settings WHERE tenant_id = ?").bind(b.id).first<any>()).currency).toBe("USD");
+  });
+
+  it("owner sets currency and language when creating a tenant and can change them later", async () => {
+    const o = await ownerLogin();
+    const res = await o.fetch("POST", "/tenants", { slug: "gulf-client", business_name: "Gulf", admin_email: "a@gulf.test", admin_password: "a-long-password-1", currency: "kwd", default_language: "ar" });
+    expect(res.status).toBe(201); const made = (await res.json()) as any;
+    let d = (await (await o.fetch("GET", `/tenants/${made.id}`)).json()) as any;
+    expect(d.prefs).toEqual({ currency: "KWD", default_language: "ar" });
+    expect((await o.fetch("POST", `/tenants/${made.id}/preferences`, { currency: "EGP", default_language: "fr" })).status).toBe(200);
+    d = (await (await o.fetch("GET", `/tenants/${made.id}`)).json()) as any;
+    expect(d.prefs).toEqual({ currency: "EGP", default_language: "fr" });
+    expect((await o.fetch("POST", `/tenants/${made.id}/preferences`, { currency: "nope!" })).status).toBe(400);
+    expect((await o.fetch("POST", `/tenants/${made.id}/preferences`, { default_language: "xx" })).status).toBe(400);
+    expect((await o.fetch("POST", `/tenants/tnt_missing/preferences`, { currency: "USD" })).status).toBe(404);
+    // defaults when omitted
+    const plain = await o.fetch("POST", "/tenants", { slug: "plain-client", business_name: "Plain", admin_email: "a@plain.test", admin_password: "a-long-password-1" });
+    const pid = ((await plain.json()) as any).id;
+    expect(((await (await o.fetch("GET", `/tenants/${pid}`)).json()) as any).prefs).toEqual({ currency: "USD", default_language: "en" });
+  });
+});

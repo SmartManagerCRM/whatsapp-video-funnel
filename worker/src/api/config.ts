@@ -24,6 +24,14 @@ configApi.get("/settings", async (c) => {
   });
 });
 
+/** Quick change from the header currency picker (does not require the full settings form). */
+configApi.put("/settings/currency", async (c) => {
+  const t = c.get("tenant"); const b = await json(c);
+  await c.env.DB.prepare("UPDATE tenant_settings SET currency = ?, updated_at = ? WHERE tenant_id = ?").bind(currencyCode(b.currency), nowIso(), t.id).run();
+  await audit(c.env, t.id, "tenant_user", c.get("session").userId, "currency_changed", { currency: String(b.currency).toUpperCase() });
+  return c.json({ ok: true });
+});
+
 configApi.put("/settings", async (c) => {
   const t = c.get("tenant"); const b = await json(c);
   const tz = str(b.timezone, "Time zone", { max: 64 })!;

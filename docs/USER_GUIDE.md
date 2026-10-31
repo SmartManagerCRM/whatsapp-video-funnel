@@ -1,6 +1,6 @@
 # User guide (for the business owner)
 
-**Languages**: the app is available in English, Français and العربية (the language menu is on the sign-in page and at the bottom of the sidebar; Arabic switches the whole layout to right-to-left). Your choice is remembered on that device. The chatbot has its own *Default language* under Settings, with built-in French and Arabic messages you can edit under **Messages**.
+**Languages and currency**: the **Language** and **Currency** menus are in the header at the top of every page (and again in Settings). Changing the currency in the header saves it for your account. The app is available in English, Français and العربية (also selectable on the sign-in page; Arabic switches the whole layout to right-to-left). Your choice is remembered on that device. The chatbot has its own *Default language* under Settings, with built-in French and Arabic messages you can edit under **Messages**.
 
 Open your private link (`…/t/<your-name>/`), sign in, and optionally **Install** the app (browser menu → Install, or the *Install app* button in the sidebar). Your WhatsApp automation keeps running on the server when the app is closed or your computer is off; the app is only your control panel. The app shows an **offline** banner when you lose internet.
 

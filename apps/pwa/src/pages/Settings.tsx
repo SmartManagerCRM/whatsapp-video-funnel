@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { BASE, del, get, post, put } from "../api";
+import { LANGS, getLang, setLang, type Lang } from "../i18n";
 import { Button, Card, CurrencySelect, Field, Input, Loading, Notice, PageHeader, Select, Toggle, useAction, useLoad } from "../ui";
 import { t } from "../i18n";
 
@@ -16,17 +17,20 @@ export function SettingsPage() {
   const listed = (Intl as any).supportedValuesOf ? (Intl as any).supportedValuesOf("timeZone") as string[] : [];
   // "UTC" is not in the browser's zone list, and the stored value must always be selectable
   const zones = [...new Set(["UTC", s.timezone, ...listed])];
-  const save = () => run(() => put("/settings", { ...s, opt_out_keywords: list(s.opt_out_keywords), opt_in_keywords: list(s.opt_in_keywords), default_delay_seconds: +s.default_delay_seconds, retention_days: +s.retention_days, handover_timeout_minutes: +s.handover_timeout_minutes }), "Settings saved");
+  const save = async () => { const ok = await run(() => put("/settings", { ...s, opt_out_keywords: list(s.opt_out_keywords), opt_in_keywords: list(s.opt_in_keywords), default_delay_seconds: +s.default_delay_seconds, retention_days: +s.retention_days, handover_timeout_minutes: +s.handover_timeout_minutes }), "Settings saved"); if (ok) window.dispatchEvent(new Event("sm-settings-changed")); };
   return (
     <>
       <PageHeader title={t("Settings")} actions={<Button loading={busy} onClick={save}>{t("Save settings")}</Button>} />
       <div className="grid gap-4 lg:grid-cols-2">
         <Card title={t("Business")}>
           <div className="space-y-3">
+            <Field label={t("Interface language")} hint={t("The language of this app on this device. It does not change what your customers receive.")}>
+              <Select value={getLang()} onChange={(e) => setLang(e.target.value as Lang)}>{LANGS.map((l) => <option key={l.code} value={l.code}>{l.label}</option>)}</Select>
+            </Field>
             <Field label={t("Business name")}><Input value={s.business_name ?? ""} onChange={(e) => set("business_name", e.target.value)} /></Field>
             <Field label={t("Website URL")} hint={t("Sent to customers after the last video.")}><Input type="url" placeholder="https://" value={s.website_url ?? ""} onChange={(e) => set("website_url", e.target.value)} /></Field>
             <Field label={t("Time zone")}><Select value={s.timezone} onChange={(e) => set("timezone", e.target.value)}>{zones.map((z) => <option key={z}>{z}</option>)}</Select></Field>
-            <Field label={t("Default language")} hint={t("Language of the messages your chatbot sends by default.")}><Select value={s.default_language} onChange={(e) => set("default_language", e.target.value)}><option value="en">English</option><option value="fr">Français</option><option value="ar">العربية</option>{!["en", "fr", "ar"].includes(s.default_language) && <option value={s.default_language}>{s.default_language}</option>}</Select></Field>
+            <Field label={t("Chatbot language (default)")} hint={t("Language of the messages your chatbot sends by default.")}><Select value={s.default_language} onChange={(e) => set("default_language", e.target.value)}><option value="en">English</option><option value="fr">Français</option><option value="ar">العربية</option>{!["en", "fr", "ar"].includes(s.default_language) && <option value={s.default_language}>{s.default_language}</option>}</Select></Field>
             <Field label={t("Currency")} hint={t("Used for cost estimates. WhatsApp charges are billed by Meta in your own account currency.")}><CurrencySelect value={s.currency ?? "USD"} onChange={(v) => set("currency", v)} /></Field>
             <Field label={t("Notification email (optional)")}><Input type="email" value={s.notification_email ?? ""} onChange={(e) => set("notification_email", e.target.value)} /></Field>
           </div>

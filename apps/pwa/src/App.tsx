@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { BarChart3, Download, FileVideo2, Film, KeyRound, LayoutDashboard, ListVideo, LogOut, Menu, MessageSquareText, MessagesSquare, Plug, Rocket, Settings as Cog, Tags, Users, WifiOff, X } from "lucide-react";
-import { ApiError, BASE, IS_OWNER, SLUG, get, post, setCsrf } from "./api";
-import { Button, Field, Input, LangSwitch, Loading, UiProvider, cx, useAction, useLang } from "./ui";
+import { ApiError, BASE, IS_OWNER, SLUG, get, post, put, setCsrf } from "./api";
+import { Button, CurrencySelect, Field, HeaderLang, Input, LangSwitch, Loading, UiProvider, cx, useAction, useLang, useUi } from "./ui";
 import { Dashboard } from "./pages/Dashboard";
 import { Categories } from "./pages/Categories";
 import { Videos } from "./pages/Videos";
@@ -83,6 +83,17 @@ function useInstall() {
 function Shell({ me, onLogout }: { me: Me; onLogout: () => void }) {
   const hash = useHash(); const online = useOnline(); const install = useInstall();
   const [drawer, setDrawer] = useState(false);
+  const [currency, setCurrency] = useState<string | null>(null);
+  const { toast } = useUi();
+  useEffect(() => {
+    const load = () => get("/settings").then((x) => setCurrency(x.currency ?? "USD")).catch(() => undefined);
+    void load(); window.addEventListener("sm-settings-changed", load); return () => window.removeEventListener("sm-settings-changed", load);
+  }, []);
+  const changeCurrency = async (c: string) => {
+    const prev = currency; setCurrency(c);
+    try { await put("/settings/currency", { currency: c }); toast(t("Currency updated")); }
+    catch (e) { setCurrency(prev); toast((e as Error).message, "error"); }
+  };
   const [page, arg] = hash.split("/");
   const go = (id: string) => { location.hash = `/${id}`; setDrawer(false); };
   const content: Record<string, ReactNode> = {
@@ -104,7 +115,6 @@ function Shell({ me, onLogout }: { me: Me; onLogout: () => void }) {
       <div className="flex items-center gap-2 px-1">
         <img src={`${BASE}/logo`} alt="" className="h-9 w-9 rounded-lg bg-white/10 object-contain" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
         <div className="min-w-0 truncate"><div className="truncate font-medium text-white">{me.tenant?.name}</div>{me.user.email}</div></div>
-      <LangSwitch dark />
       {install && <button onClick={install} className="flex w-full items-center gap-2 rounded-lg px-2 py-2 hover:bg-white/5"><Download className="h-4 w-4" />{t("Install app")}</button>}
       <button onClick={onLogout} className="flex w-full items-center gap-2 rounded-lg px-2 py-2 hover:bg-white/5"><LogOut className="h-4 w-4" />{t("Sign out")}</button>
     </div>
@@ -117,9 +127,19 @@ function Shell({ me, onLogout }: { me: Me; onLogout: () => void }) {
           <aside className="rise absolute inset-y-0 start-0 flex w-72 flex-col bg-ink safe-top"><div className="flex items-center justify-between p-5"><Brand light /><button aria-label={t("Close menu")} onClick={() => setDrawer(false)} className="text-slate-300"><X /></button></div>{nav}{footer}</aside></div>
       )}
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 safe-top lg:hidden"><Brand /><button aria-label={t("Open menu")} onClick={() => setDrawer(true)} className="rounded-lg p-2 hover:bg-slate-100"><Menu /></button></header>
+        <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-slate-200 bg-white px-4 py-2.5 safe-top">
+          <div className="flex items-center gap-3">
+            <div className="lg:hidden"><Brand /></div>
+            <button aria-label={t("Open menu")} onClick={() => setDrawer(true)} className="rounded-lg p-2 hover:bg-slate-100 lg:hidden"><Menu /></button>
+            <div className="hidden text-sm font-medium text-slate-700 lg:block">{me.tenant?.name}</div>
+          </div>
+          <div className="flex items-center gap-2 sm:gap-3" data-testid="header-controls">
+            <HeaderLang />
+            {currency && <CurrencySelect variant="header" value={currency} onChange={changeCurrency} disabled={me.user.role === "viewer"} />}
+          </div>
+        </header>
         {!online && <div role="status" className="flex items-center justify-center gap-2 bg-amber-500 px-3 py-1.5 text-sm font-medium text-white"><WifiOff className="h-4 w-4" />{t("You're offline. The app is installed, but live data and WhatsApp automation need an internet connection.")}</div>}
-        <main className="min-h-0 flex-1 overflow-y-auto"><div className="mx-auto max-w-6xl p-4 pb-28 sm:p-6 lg:pb-8">{content[page] ?? content.dashboard}</div></main>
+        <main className="min-h-0 flex-1 overflow-y-auto"><div key={currency ?? "c"} className="mx-auto max-w-6xl p-4 pb-28 sm:p-6 lg:pb-8">{content[page] ?? content.dashboard}</div></main>
         <nav className="fixed inset-x-0 bottom-0 z-30 flex border-t border-slate-200 bg-white/95 backdrop-blur safe-bottom lg:hidden" aria-label={t("Quick")}>
           {NAV.filter((n) => TABS.includes(n.id)).map(({ id, label, icon: Icon }) => (
             <button key={id} onClick={() => go(id)} aria-current={page === id ? "page" : undefined} className={cx("flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 text-[11px] font-medium", page === id ? "text-brand-700" : "text-slate-500")}><Icon className="h-5 w-5" />{t(SHORT[id] ?? label)}</button>

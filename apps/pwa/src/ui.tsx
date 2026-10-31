@@ -219,15 +219,37 @@ export function LangSwitch({ dark }: { dark?: boolean }) {
 }
 
 /** Currency picker: all MENA currencies first, then every other ISO 4217 currency. Names follow the UI language. */
-export function CurrencySelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+export function CurrencySelect({ value, onChange, variant = "form", disabled }: { value: string; onChange: (v: string) => void; variant?: "form" | "header" | "headerDark"; disabled?: boolean }) {
   const lang = useLang();
   const g = currencyGroups(lang);
   const known = [...g.mena, ...g.other].some((c) => c.code === value);
-  return (
-    <Select value={value} onChange={(e) => onChange(e.target.value)} aria-label={t("Currency")}>
+  const options = (
+    <>
       {!known && <option value={value}>{value}</option>}
       <optgroup label={t("Middle East & North Africa")}>{g.mena.map((c) => <option key={c.code} value={c.code}>{c.code} — {c.name}</option>)}</optgroup>
       <optgroup label={t("Other currencies (international)")}>{g.other.map((c) => <option key={c.code} value={c.code}>{c.code} — {c.name}</option>)}</optgroup>
-    </Select>
+    </>
+  );
+  if (variant === "form") return <Select value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)} aria-label={t("Currency")}>{options}</Select>;
+  return (
+    <label className="flex items-center gap-1.5 text-xs" title={t("Currency")}>
+      <span className={cx("hidden sm:inline", variant === "headerDark" ? "text-slate-300" : "text-slate-500")}>{t("Currency")}</span>
+      <select aria-label={t("Currency")} value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)}
+        className={cx("max-w-[8.5rem] truncate rounded-lg border px-2 py-1.5 text-xs sm:max-w-[11rem] disabled:opacity-60", variant === "headerDark" ? "border-white/20 bg-white/10 text-white" : "border-slate-300 bg-white text-slate-700")}>
+        {variant === "headerDark" ? <>{!known && <option value={value}>{value}</option>}
+          <optgroup label={t("Middle East & North Africa")}>{g.mena.map((c) => <option key={c.code} value={c.code} className="text-slate-900">{c.code} — {c.name}</option>)}</optgroup>
+          <optgroup label={t("Other currencies (international)")}>{g.other.map((c) => <option key={c.code} value={c.code} className="text-slate-900">{c.code} — {c.name}</option>)}</optgroup></> : options}
+      </select>
+    </label>
+  );
+}
+
+/** Language picker for headers: shows the label so it is clearly discoverable. */
+export function HeaderLang({ dark }: { dark?: boolean }) {
+  return (
+    <label className="flex items-center gap-1.5 text-xs" title={t("Language")}>
+      <span className={cx("hidden sm:inline", dark ? "text-slate-300" : "text-slate-500")}>{t("Language")}</span>
+      <LangSwitch dark={dark} />
+    </label>
   );
 }

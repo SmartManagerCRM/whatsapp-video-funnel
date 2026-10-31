@@ -44,7 +44,7 @@ Then create the owner and a tenant - see [docs/INSTALLATION.md](docs/INSTALLATIO
 ## Tests
 
 ```bash
-npm test                                                   # 110 Worker tests in workerd (real D1/R2/Queues bindings, mocked Meta)
+npm test                                                   # 113 Worker tests in workerd (real D1/R2/Queues bindings, mocked Meta)
 npm run typecheck                                          # Worker + PWA
 dotnet test apps/license-generator/tests/SmartManager.Licensing.Tests   # 14 tests for the license signer/key store/register
 PW=$(node -p "require.resolve('playwright')") bash tests/e2e/setup-local.sh && PW=$PW LIC=worker/.dev-keys/demo-cafe.smlic node tests/e2e/browser.mjs

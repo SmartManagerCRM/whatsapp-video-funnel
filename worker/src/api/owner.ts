@@ -7,6 +7,14 @@ import { approveTransfer, getLicenseStatus, resetRegisteredPhone, revokeLicense,
 import { randomToken } from "../lib/crypto";
 import { json, oneOf, str } from "./validate";
 
+const LANGS = ["en", "fr", "ar"] as const;
+function currencyOf(v: unknown, fallback = "USD"): string {
+  if (v === undefined || v === null || v === "") return fallback;
+  const c = String(v).trim().toUpperCase();
+  if (!/^[A-Z]{3}$/.test(c)) throw new HttpError(400, "Choose a valid currency");
+  return c;
+}
+
 export const ownerApi = new Hono<AppEnv>();
 ownerApi.use("*", requireOwnerSession);
 
@@ -37,7 +45,8 @@ ownerApi.post("/tenants", async (c) => {
   const id = newId("tnt"); const now = nowIso();
   await c.env.DB.batch([
     c.env.DB.prepare("INSERT INTO tenants (id, slug, business_name, status, created_at, updated_at) VALUES (?,?,?,'active',?,?)").bind(id, slug, name, now, now),
-    c.env.DB.prepare("INSERT INTO tenant_settings (tenant_id, business_name, timezone, updated_at) VALUES (?,?,?,?)").bind(id, name, str(b.timezone, "Time zone", { optional: true }) ?? "UTC", now),
+    c.env.DB.prepare("INSERT INTO tenant_settings (tenant_id, business_name, timezone, default_language, currency, updated_at) VALUES (?,?,?,?,?,?)")
+      .bind(id, name, str(b.timezone, "Time zone", { optional: true }) ?? "UTC", b.default_language ? oneOf(b.default_language, "Language", LANGS) : "en", currencyOf(b.currency), now),
     c.env.DB.prepare("INSERT INTO tenant_users (id, tenant_id, email, password_hash, role, created_at) VALUES (?,?,?,?, 'admin', ?)").bind(newId("usr"), id, email, await hashPassword(assertStrongPassword(b.admin_password), hashIterations(c.env)), now),
     c.env.DB.prepare("INSERT INTO whatsapp_accounts (tenant_id, verify_token, status, updated_at) VALUES (?,?, 'not_connected', ?)").bind(id, randomToken(16), now),
   ]);
@@ -59,7 +68,8 @@ ownerApi.get("/tenants/:id", async (c) => {
     `SELECT (SELECT COUNT(*) FROM customers WHERE tenant_id = ?1) AS customers, (SELECT COUNT(*) FROM videos WHERE tenant_id = ?1) AS videos,
             (SELECT COALESCE(SUM(size_bytes),0) FROM videos WHERE tenant_id = ?1) AS video_bytes`,
   ).bind(id).first();
-  return c.json({ tenant: t, whatsapp: wa, licenses, users, counts, license_status: await getLicenseStatus(c.env, id), url: `${new URL(c.req.url).origin}/t/${t.slug}/` });
+  const prefs = await c.env.DB.prepare("SELECT currency, default_language FROM tenant_settings WHERE tenant_id = ?").bind(id).first();
+  return c.json({ tenant: t, prefs, whatsapp: wa, licenses, users, counts, license_status: await getLicenseStatus(c.env, id), url: `${new URL(c.req.url).origin}/t/${t.slug}/` });
 });
 
 ownerApi.put("/tenants/:id", async (c) => {
@@ -67,6 +77,17 @@ ownerApi.put("/tenants/:id", async (c) => {
   const r = await c.env.DB.prepare("UPDATE tenants SET business_name = ?, updated_at = ? WHERE id = ?").bind(str(b.business_name, "Business name", { max: 120 }), nowIso(), c.req.param("id")).run();
   if (!r.meta.changes) throw new HttpError(404, "Tenant not found");
   await audit(c.env, c.req.param("id"), "owner", c.get("session").userId, "tenant_updated");
+  return c.json({ ok: true });
+});
+
+/** Owner can set a tenant's bot language and currency (the client can change both later in Settings). */
+ownerApi.post("/tenants/:id/preferences", async (c) => {
+  const b = await json(c); const id = c.req.param("id");
+  const lang = b.default_language ? oneOf(b.default_language, "Language", LANGS) : null;
+  const cur = b.currency ? currencyOf(b.currency) : null;
+  const r = await c.env.DB.prepare("UPDATE tenant_settings SET default_language = COALESCE(?, default_language), currency = COALESCE(?, currency), updated_at = ? WHERE tenant_id = ?").bind(lang, cur, nowIso(), id).run();
+  if (!r.meta.changes) throw new HttpError(404, "Tenant not found");
+  await audit(c.env, id, "owner", c.get("session").userId, "tenant_preferences_changed", { lang, cur });
   return c.json({ ok: true });
 });
 
