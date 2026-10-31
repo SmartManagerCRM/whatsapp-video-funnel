@@ -93,3 +93,15 @@ describe("platform owner", () => {
     expect(res.status).toBe(401);
   });
 });
+
+describe("auth boundary", () => {
+  it("paths that merely contain /api/auth/ do not skip authentication", async () => {
+    const t = await createTenant();
+    for (const p of [`/t/${t.slug}/api/customers/x/api/auth/y`, `/t/${t.slug}/api/categories/..%2Fapi%2Fauth%2Flogin`, `/t/${t.slug}/api//api/auth/me/../../categories`, `/t/${t.slug}/api/videos/%2e%2e/auth/login`]) {
+      const res = await raw(p);
+      expect([401, 404], `${p} → ${res.status}`).toContain(res.status);
+    }
+    expect((await raw(`/t/${t.slug}/api/auth/me`)).status).toBe(401); // me guards itself
+    expect((await raw(`/t/${t.slug}/api/categories`)).status).toBe(401);
+  });
+});

@@ -62,7 +62,9 @@ app.get("/owner/manifest.webmanifest", () => new Response(JSON.stringify({
 
 const tenantApi = new Hono<AppEnv>();
 tenantApi.route("/auth", tenantAuth);
-tenantApi.use("*", async (c, next) => (c.req.path.includes("/api/auth/") ? next() : requireTenantSession(c, next)));
+// Only the auth sub-router (login/logout/me/password, which guard themselves) skips the session middleware.
+// Exact prefix match on the mounted path - never a substring match on a security boundary.
+tenantApi.use("*", async (c, next) => (c.req.path.startsWith(`/t/${c.req.param("slug")}/api/auth/`) ? next() : requireTenantSession(c, next)));
 tenantApi.route("/", configApi);
 tenantApi.route("/", videoApi);
 tenantApi.route("/", crmApi);
@@ -75,6 +77,11 @@ const ownerRoot = new Hono<AppEnv>();
 ownerRoot.route("/auth", ownerAuth);
 ownerRoot.route("/", ownerApi);
 app.route("/owner/api", ownerRoot);
+
+// Unknown API paths must be a JSON 404, never the SPA shell.
+app.all("/t/:slug/api/*", (c) => c.json({ error: "Not found" }, 404));
+app.all("/t/:slug/webhook/*", (c) => c.json({ error: "Not found" }, 404));
+app.all("/owner/api/*", (c) => c.json({ error: "Not found" }, 404));
 
 // ---------------------------------------------------------------- SPA + static assets
 async function spa(c: { env: Env; req: { url: string; raw: Request } }) {

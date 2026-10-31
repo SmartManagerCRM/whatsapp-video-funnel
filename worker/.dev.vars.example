@@ -1,0 +1,4 @@
+ENCRYPTION_KEY=<base64 of 32 random bytes: node -e "console.log(require('crypto').randomBytes(32).toString('base64'))">
+OWNER_BOOTSTRAP_TOKEN=dev-bootstrap-token
+COOKIE_SECURE=false
+LICENSE_PUBLIC_KEY="-----BEGIN PUBLIC KEY-----\n<run: node scripts/dev-license.mjs init>\n-----END PUBLIC KEY-----\n"
